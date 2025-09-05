@@ -16,6 +16,7 @@ import { Doughnut } from "react-chartjs-2";
 import Link from "next/link";
 import Image from "next/image";
 import styles from "./dashboard.module.css";
+import Sidebar from "../components/Sidebar";
 
 ChartJS.register(
   ArcElement,
@@ -37,6 +38,7 @@ export default function DashboardPage() {
   const [streams, setStreams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [cityData, setCityData] = useState({ labels: [], data: [] });
   const [statusData, setStatusData] = useState({ labels: [], data: [], backgroundColor: [] });
   const [streamActivity, setStreamActivity] = useState({ labels: [], data: [] });
@@ -80,32 +82,19 @@ export default function DashboardPage() {
       try {
         setLoading(true);
         setError(null);
-        try {
-          const response = await fetch(API, {
-            headers: { "Cache-Control": "no-cache" },
-            signal: AbortSignal.timeout(8000),
-          });
-          if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
-          const data = await response.json();
-          const streamsData = data.streams || [];
-          setStreams(streamsData);
-          processChartData(streamsData);
-          setRefreshTime(new Date());
-        } catch {
-          // fallback to mock (optional)
-          const mockResponse = await fetch("/api/mock/luna-streams/1/streams", {
-            headers: { "Cache-Control": "no-cache" },
-          });
-          if (!mockResponse.ok) throw new Error(`Mock API request failed with status ${mockResponse.status}`);
-          const mockData = await mockResponse.json();
-          const mockStreamsData = mockData.streams || [];
-          setStreams(mockStreamsData);
-          processChartData(mockStreamsData);
-          setRefreshTime(new Date());
-        }
+        const response = await fetch(API, {
+          headers: { "Cache-Control": "no-cache" },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
+        const data = await response.json();
+        const streamsData = data.streams || [];
+        setStreams(streamsData);
+        processChartData(streamsData);
+        setRefreshTime(new Date());
         setLoading(false);
       } catch (err) {
-        console.error("Both real and mock API fetch attempts failed:", err);
+        console.error("API fetch failed:", err);
         setError("Failed to fetch streams data. Please try again later.");
         setLoading(false);
       }
@@ -150,29 +139,18 @@ export default function DashboardPage() {
       try {
         setLoading(true);
         setError(null);
-        try {
-          const response = await fetch(API, {
-            headers: { "Cache-Control": "no-cache" },
-            signal: AbortSignal.timeout(8000),
-          });
-          if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
-          const data = await response.json();
-          setStreams(data.streams || []);
-          processChartData(data.streams || []);
-          setRefreshTime(new Date());
-        } catch {
-          const mockResponse = await fetch("/api/mock/luna-streams/1/streams", {
-            headers: { "Cache-Control": "no-cache" },
-          });
-          if (!mockResponse.ok) throw new Error(`Mock API request failed with status ${mockResponse.status}`);
-          const mockData = await mockResponse.json();
-          setStreams(mockData.streams || []);
-          processChartData(mockData.streams || []);
-          setRefreshTime(new Date());
-        }
+        const response = await fetch(API, {
+          headers: { "Cache-Control": "no-cache" },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!response.ok) throw new Error(`API request failed with status ${response.status}`);
+        const data = await response.json();
+        setStreams(data.streams || []);
+        processChartData(data.streams || []);
+        setRefreshTime(new Date());
         setLoading(false);
       } catch (err) {
-        console.error("Both real and mock API refresh attempts failed:", err);
+        console.error("API refresh failed:", err);
         setError("Failed to refresh data. Please try again.");
         setLoading(false);
       }
@@ -256,65 +234,17 @@ export default function DashboardPage() {
   return (
     <div className={styles.dashboardWrapper}>
       {/* Sidebar */}
-      <div className={styles.sidebar}>
-        <div className={styles.sidebarHeader}>
-          <div className={styles.sidebarLogo}>
-            <Image src="/safecity.jpeg" width={45} height={45} alt="Logo" />
-            <span>SafeCity Admin</span>
-          </div>
-        </div>
-        <div className="p-3">
-          <div className="mb-4">
-            <div className={styles.navSection}>
-              <h6 className={styles.navSectionTitle}>Main</h6>
-              <ul className="nav flex-column">
-                <li className="nav-item mb-2">
-                  <Link href="/" className={styles.navItem}>
-                    <i className={`bi bi-house-door ${styles.navIcon}`}></i> Home
-                  </Link>
-                </li>
-                <li className="nav-item mb-2">
-                  <Link href="/dashboard" className={`${styles.navItem} ${styles.navItemActive}`}>
-                    <i className={`bi bi-speedometer2 ${styles.navIcon}`}></i> Dashboard
-                  </Link>
-                </li>
-                <li className="nav-item mb-2">
-                  <Link href="/streams" className={styles.navItem}>
-                    <i className={`bi bi-camera-video ${styles.navIcon}`}></i> Streams
-                  </Link>
-                </li>
-                 <li className="nav-item mb-2">
-                  <Link href="/live_view" className={`${styles.navItem} ${styles.navItemActive}`}>
-                    <i className={`bi bi-eye ${styles.navIcon}`}></i> Live View
-                  </Link>
-                </li>
-                <li className="nav-item mb-2">
-                  <Link href="/zone" className={styles.navItem}>
-                    <i className={`bi bi-geo-alt ${styles.navIcon}`}></i> Zone
-                  </Link>
-                </li>
-              </ul>
-            </div>
-          </div>
-          <div className="mb-4">
-            <div className={styles.navSection}>
-              <h6 className={styles.navSectionTitle}>Management</h6>
-              <ul className="nav flex-column">
-                <li className="nav-item mb-2">
-                  <Link href="/dahua-fd" className={styles.navItem}>
-                    <i className={`bi bi-building ${styles.navIcon}`}></i> Dahua FD
-                  </Link>
-                </li>
-
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
+      <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
       {/* Main Content */}
       <div className={styles.mainContent}>
         <div className={styles.dashboardHeader}>
+          <button
+            className={`btn btn-outline-secondary d-md-none me-3`}
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+          >
+            <i className="bi bi-list"></i>
+          </button>
           <h2 className={styles.pageTitle}>Stream Analytics Dashboard</h2>
           <div className="d-flex align-items-center gap-2">
             <span className="text-muted me-2">Last updated: {refreshTime.toLocaleTimeString()}</span>

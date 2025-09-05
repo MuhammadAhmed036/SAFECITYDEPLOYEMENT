@@ -482,7 +482,7 @@ export default function LiveViewPage() {
   const checkServerHealth = async () => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
       
       const res = await fetch(EVENTS_API, { 
         cache: 'no-store', 
@@ -504,16 +504,10 @@ export default function LiveViewPage() {
       const apiUrl = useMock ? '/api/mock/events' : EVENTS_API;
       console.log(`[LiveView] Loading ${useMock ? 'mock' : 'real'} data from ${apiUrl}...`);
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 second timeout
-      
       const res = await fetch(apiUrl, { 
         cache: 'no-store', 
-        headers: { 'Cache-Control': 'no-cache' },
-        signal: controller.signal
+        headers: { 'Cache-Control': 'no-cache' } 
       });
-      
-      clearTimeout(timeoutId);
       
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -544,16 +538,10 @@ export default function LiveViewPage() {
       const apiUrl = useMock ? '/api/mock/streams' : STREAMS_API;
       console.log(`[LiveView] Loading ${useMock ? 'mock' : 'real'} streams data from ${apiUrl}...`);
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 second timeout
-      
       const res = await fetch(apiUrl, { 
         cache: 'no-store', 
-        headers: { 'Cache-Control': 'no-cache' },
-        signal: controller.signal
+        headers: { 'Cache-Control': 'no-cache' } 
       });
-      
-      clearTimeout(timeoutId);
       
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -583,16 +571,10 @@ export default function LiveViewPage() {
       const apiUrl = useMock ? '/api/mock/dahua' : DAHUA_API;
       console.log(`[LiveView] Loading ${useMock ? 'mock' : 'real'} Dahua cameras data from ${apiUrl}...`);
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 second timeout
-      
       const res = await fetch(apiUrl, { 
         cache: 'no-store', 
-        headers: { 'Cache-Control': 'no-cache' },
-        signal: controller.signal
+        headers: { 'Cache-Control': 'no-cache' } 
       });
-      
-      clearTimeout(timeoutId);
       
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -709,16 +691,7 @@ export default function LiveViewPage() {
       if (!ENABLE_POLL_FALLBACK || pollTimer) return;
       pollTimer = setInterval(async () => {
         try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 second timeout
-          
-          const res = await fetch(EVENTS_API, { 
-            cache: 'no-store', 
-            headers: { 'Cache-Control': 'no-cache' },
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeoutId);
+          const res = await fetch(EVENTS_API, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
           if (!res.ok) return;
           const data = await res.json();
           const list = Array.isArray(data?.events) ? data.events : [];

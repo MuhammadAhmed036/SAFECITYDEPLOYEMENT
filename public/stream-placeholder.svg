@@ -1,0 +1,22 @@
+<svg width="84" height="84" viewBox="0 0 84 84" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="84" height="84" rx="10" fill="#f3f4f6"/>
+  <rect x="2" y="2" width="80" height="80" rx="8" fill="#e5e7eb" stroke="#d1d5db" stroke-width="2"/>
+  
+  <!-- Stream icon -->
+  <g transform="translate(42, 42)">
+    <!-- Camera body -->
+    <rect x="-12" y="-8" width="24" height="16" rx="2" fill="#6b7280"/>
+    
+    <!-- Lens -->
+    <circle cx="-4" cy="0" r="6" fill="#374151"/>
+    <circle cx="-4" cy="0" r="3" fill="#1f2937"/>
+    
+    <!-- Signal waves -->
+    <path d="M8 -6 Q14 -3 14 0 Q14 3 8 6" stroke="#3b82f6" stroke-width="2" fill="none"/>
+    <path d="M10 -4 Q15 -2 15 0 Q15 2 10 4" stroke="#60a5fa" stroke-width="1.5" fill="none"/>
+    <path d="M12 -2 Q16 -1 16 0 Q16 1 12 2" stroke="#93c5fd" stroke-width="1" fill="none"/>
+  </g>
+  
+  <!-- Text -->
+  <text x="42" y="68" text-anchor="middle" font-family="Arial, sans-serif" font-size="10" fill="#6b7280">Stream</text>
+</svg>

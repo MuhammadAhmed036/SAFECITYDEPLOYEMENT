@@ -7,6 +7,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.css';
 import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet/dist/leaflet.css';
 import Popup from './Popup';
+import ClusterPreviewPopup from './ClusterPreviewPopup';
 
 /* =========================
    CONFIG
@@ -16,13 +17,22 @@ const DEFAULT_CENTER = [33.6844, 73.0479]; // Islamabad/Rawalpindi approx
 const FALLBACK_ICON = '/camera-icon.svg';   // keep this file in /public
 const BASE = 'http://192.168.18.70:5000';
 
-// Camera icon for markers
+// Camera icon for event markers
 const CameraIcon = L.icon({
   iconUrl: '/camera-icon.svg',
   iconSize: [32, 32],
   iconAnchor: [16, 32],
   popupAnchor: [0, -32],
 });
+
+// Stream icon for stream markers
+const StreamIcon = L.icon({
+  iconUrl: '/stream-placeholder.svg',
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
+});
+
 L.Marker.prototype.options.icon = CameraIcon;
 
 /* =========================
@@ -116,6 +126,34 @@ const collectImageCandidates = (ev, fd, cacheKey) => {
   return Array.from(new Set(out));
 };
 
+// Normalize a Dahua camera into a consistent format
+const normalizeDahua = (camera) => {
+  const lat = camera?.lat;
+  const lng = camera?.lon;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const when = camera?.created_at || camera?.updated_at || null;
+  const cacheKey = camera?.track_id || camera?.camera_name || Date.now();
+
+  return {
+    lat,
+    lng,
+    label: camera?.camera_name || 'Unknown Camera',
+    trackId: camera?.track_id || '—',
+    when: when || '—',
+    city: camera?.city || '—',
+    area: camera?.area || '—',
+    district: camera?.district || '—',
+    street: camera?.street || '—',
+    houseNumber: camera?.house_number || '—',
+    image: '/camera-icon.svg', // Camera icon for Dahua cameras
+    imageCandidates: ['/camera-icon.svg'],
+    cameraId: camera?.track_id || cacheKey,
+    timestamp: new Date(when || Date.now()).getTime(),
+    type: 'dahua',
+  };
+};
+
 // Normalize an API event into a consistent format
 const normalizeEvent = (ev) => {
   const lat = ev?.location?.geo_position?.latitude ?? ev?.latitude;
@@ -142,6 +180,35 @@ const normalizeEvent = (ev) => {
     imageCandidates,
     eventId: ev?.event_id || ev?.id || cacheKey,
     timestamp: new Date(when || Date.now()).getTime(),
+    type: 'event',
+  };
+};
+
+const normalizeStream = (stream) => {
+  const lat = stream?.location?.geo_position?.latitude;
+  const lng = stream?.location?.geo_position?.longitude;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const when = stream?.create_time || stream?.createdAt || null;
+  const cacheKey = stream?.stream_id || stream?.account_id || Date.now();
+
+  return {
+    lat,
+    lng,
+    label: stream?.name || 'Unknown Stream',
+    accountId: stream?.account_id || '—',
+    status: stream?.status || 'unknown',
+    when: when || '—',
+    city: stream?.location?.city || '—',
+    area: stream?.location?.area || '—',
+    district: stream?.location?.district || '—',
+    street: stream?.location?.street || '—',
+    houseNumber: stream?.location?.house_number || '—',
+    image: '/stream-placeholder.svg', // Dummy image for streams
+    imageCandidates: ['/stream-placeholder.svg'],
+    streamId: stream?.stream_id || cacheKey,
+    timestamp: new Date(when || Date.now()).getTime(),
+    type: 'stream',
   };
 };
 
@@ -215,12 +282,15 @@ function ImageWithFallback({ imageCandidates = [], fallbackIcon, alt }) {
 /* =========================
    MAIN COMPONENT
    ========================= */
-export default function LiveCameraMap({ height = 500, events = [] }) {
+export default function LiveCameraMap({ height = 500, events = [], streams = [], dahua = [], onPolygonChange, activeTab = 'events', onClusterClick }) {
   const ref = useRef(null);
   const mapRef = useRef(null);
   const clusterRef = useRef(null);
-  const [isPopupOpen, setPopupOpen] = useState(false);
+  const polygonRef = useRef(null);
+  const [popupOpen, setPopupOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
+  const [clusterPreviewOpen, setClusterPreviewOpen] = useState(false);
+  const [selectedClusterData, setSelectedClusterData] = useState([]);
   const hasInitiallyFitBounds = useRef(false);
 
   // Inject CSS
@@ -231,15 +301,29 @@ export default function LiveCameraMap({ height = 500, events = [] }) {
     return () => document.head.removeChild(el);
   }, []);
 
-  // Normalize data and filter to latest events per location
+  // Normalize data and filter to latest events/streams/dahua per location
   const points = useMemo(() => {
     const out = [];
-    for (const ev of Array.isArray(events) ? events : []) {
-      const p = normalizeEvent(ev);
-      if (p) out.push(p);
+    
+    if (activeTab === 'events') {
+      for (const ev of Array.isArray(events) ? events : []) {
+        const p = normalizeEvent(ev);
+        if (p) out.push(p);
+      }
+    } else if (activeTab === 'streams') {
+      for (const stream of Array.isArray(streams) ? streams : []) {
+        const p = normalizeStream(stream);
+        if (p) out.push(p);
+      }
+    } else if (activeTab === 'dahua') {
+      for (const camera of Array.isArray(dahua) ? dahua : []) {
+        const p = normalizeDahua(camera);
+        if (p) out.push(p);
+      }
     }
+    
     return getLatestEventsPerLocation(out);
-  }, [events]);
+  }, [events, streams, dahua, activeTab]);
 
   // Initialize map
   useEffect(() => {
@@ -279,104 +363,236 @@ export default function LiveCameraMap({ height = 500, events = [] }) {
           iconSize: new L.Point(40, 40),
         }),
     });
+    
+    // Add cluster click handler
+    mcg.on('clusterclick', (event) => {
+      const cluster = event.layer;
+      const markers = cluster.getAllChildMarkers();
+      
+      // Extract data from markers
+      const clusterData = markers.map(marker => marker.options.pointData).filter(Boolean);
+      
+      if (clusterData.length > 0) {
+        setSelectedClusterData(clusterData);
+        setClusterPreviewOpen(true);
+      }
+    });
     clusterRef.current = mcg;
     map.addLayer(mcg);
+
+    // Create viewport polygon
+    const createViewportPolygon = () => {
+      const bounds = map.getBounds();
+      const polygon = L.polygon([
+        [bounds.getNorth(), bounds.getWest()],
+        [bounds.getNorth(), bounds.getEast()],
+        [bounds.getSouth(), bounds.getEast()],
+        [bounds.getSouth(), bounds.getWest()]
+      ], {
+        color: '#22c55e',
+        weight: 0,
+        opacity: 0.8,
+        fillColor: '#ffffff',
+        fillOpacity: 0.1,
+        dashArray: '10, 10'
+      });
+      return polygon;
+    };
+
+    // Initialize polygon
+    const polygon = createViewportPolygon();
+    polygonRef.current = polygon;
+    polygon.addTo(map);
+
+    // Update polygon on map movement
+    const updatePolygon = () => {
+      if (polygonRef.current) {
+        const bounds = map.getBounds();
+        const newLatLngs = [
+          [bounds.getNorth(), bounds.getWest()],
+          [bounds.getNorth(), bounds.getEast()],
+          [bounds.getSouth(), bounds.getEast()],
+          [bounds.getSouth(), bounds.getWest()]
+        ];
+        polygonRef.current.setLatLngs(newLatLngs);
+        
+        // Notify parent component about polygon change
+        if (onPolygonChange) {
+          onPolygonChange(bounds);
+        }
+      }
+    };
+
+    // Add event listeners
+    map.on('moveend', updatePolygon);
+    map.on('zoomend', updatePolygon);
+
+    // Initial polygon update
+    setTimeout(() => updatePolygon(), 100);
 
     return () => {
       map.remove();
     };
   }, []);
 
-  // Update markers with click handlers for structured popup
+  // Update markers with click handlers
   useEffect(() => {
-    const mcg = clusterRef.current;
-    if (!mcg) return;
+    if (!clusterRef.current || !points.length) return;
 
-    mcg.clearLayers();
-    for (const p of points) {
-      const marker = L.marker([p.lat, p.lng]);
-      marker.on('click', () => {
-        setSelectedEvent(p);     // contains imageCandidates with cache-busters
-        setPopupOpen(true);
-      });
-      mcg.addLayer(marker);
-    }
+    clusterRef.current.clearLayers();
+    
+    points.forEach((point) => {
+      const icon = point.type === 'stream' ? StreamIcon : CameraIcon;
+      const marker = L.marker([point.lat, point.lng], { 
+        icon,
+        pointData: point // Store point data for cluster access
+      })
+        .on('click', () => {
+          setSelectedEvent(point);
+          setPopupOpen(true);
+        });
+      clusterRef.current.addLayer(marker);
+    });
 
-    // Only auto-fit bounds on initial load, preserve user control afterwards
-    if (points.length > 0 && mapRef.current && !hasInitiallyFitBounds.current) {
-      mapRef.current.fitBounds(mcg.getBounds(), { padding: [20, 20] });
+    // Fit bounds on first load
+    if (!hasInitiallyFitBounds.current && mapRef.current && points.length > 0) {
+      const group = new L.featureGroup(clusterRef.current.getLayers());
+      mapRef.current.fitBounds(group.getBounds().pad(0.1));
       hasInitiallyFitBounds.current = true;
     }
   }, [points]);
 
-  return (
-    <div style={{ width: '100%' }}>
-      <div
-        ref={ref}
-        style={{
-          width: '100%',
-          height,
-          borderRadius: 12,
-          overflow: 'hidden',
-          border: '1px solid #e5e7eb',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-          background: '#fafafa',
-        }}
-      />
+  const handleSeeDetails = (clusterData) => {
+    if (onClusterClick) {
+      onClusterClick(clusterData);
+    }
+  };
 
-      {/* Structured Popup */}
+  return (
+    <div style={{ height, width: '100%', position: 'relative' }}>
+      <div ref={ref} style={{ height: '100%', width: '100%' }} />
+      
+      <ClusterPreviewPopup
+        isOpen={clusterPreviewOpen}
+        onClose={() => setClusterPreviewOpen(false)}
+        clusterData={selectedClusterData}
+        onSeeDetails={handleSeeDetails}
+        activeTab={activeTab}
+        fallbackIcon={FALLBACK_ICON}
+      />
+      
       <Popup
-        display="center"
-        isOpen={isPopupOpen}
+        isOpen={popupOpen}
         onClose={() => setPopupOpen(false)}
       >
         {selectedEvent && (
           <div className="event-details">
             <div className="popup-header">
-              <h3 className="popup-title">Detection Details</h3>
+              <h3 className="popup-title">
+                {selectedEvent.type === 'stream' ? 'Stream Details' : 
+                 selectedEvent.type === 'dahua' ? 'Dahua Camera Details' : 'Detection Details'}
+              </h3>
             </div>
             <div className="popup-body">
               <ImageWithFallback
                 imageCandidates={selectedEvent.imageCandidates || []}
                 fallbackIcon={FALLBACK_ICON}
-                alt="Detection snapshot"
+                alt={selectedEvent.type === 'stream' ? 'Stream placeholder' : 
+                     selectedEvent.type === 'dahua' ? 'Dahua camera' : 'Detection snapshot'}
               />
               <div className="event-info">
-                <div className="event-info-item">
-                  <span className="event-info-label">Person</span>
-                  <span className="event-info-value">{selectedEvent.label}</span>
-                </div>
-                <div className="event-info-item">
-                  <span className="event-info-label">Similarity</span>
-                  <span className="event-info-value">{selectedEvent.similarity}</span>
-                </div>
-                <div className="event-info-item">
-                  <span className="event-info-label">Time</span>
-                  <span className="event-info-value">{selectedEvent.when}</span>
-                </div>
-                <div className="event-info-item">
-                  <span className="event-info-label">City</span>
-                  <span className="event-info-value">{selectedEvent.city}</span>
-                </div>
-                <div className="event-info-item">
-                  <span className="event-info-label">Area</span>
-                  <span className="event-info-value">{selectedEvent.area}</span>
-                </div>
-                <div className="event-info-item">
-                  <span className="event-info-label">Location</span>
-                  <span className="event-info-value">
-                    {selectedEvent.lat.toFixed(6)}, {selectedEvent.lng.toFixed(6)}
-                  </span>
-                </div>
+                {selectedEvent.type === 'stream' ? (
+                  <>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Stream Name</span>
+                      <span className="event-info-value">{selectedEvent.label}</span>
+                    </div>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Account ID</span>
+                      <span className="event-info-value">{selectedEvent.accountId}</span>
+                    </div>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Status</span>
+                      <span className="event-info-value">
+                        <span style={{
+                          color: selectedEvent.status === 'active' ? '#28a745' : 
+                                selectedEvent.status === 'inactive' ? '#dc3545' : '#6c757d',
+                          fontWeight: 'bold'
+                        }}>
+                          {selectedEvent.status}
+                        </span>
+                      </span>
+                    </div>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Location</span>
+                      <span className="event-info-value">{selectedEvent.city}, {selectedEvent.area}</span>
+                    </div>
+                    {selectedEvent.district !== '—' && (
+                      <div className="event-info-item">
+                        <span className="event-info-label">District</span>
+                        <span className="event-info-value">{selectedEvent.district}</span>
+                      </div>
+                    )}
+                    {selectedEvent.street !== '—' && (
+                      <div className="event-info-item">
+                        <span className="event-info-label">Address</span>
+                        <span className="event-info-value">{selectedEvent.street} {selectedEvent.houseNumber}</span>
+                      </div>
+                    )}
+                  </>
+                ) : selectedEvent.type === 'dahua' ? (
+                  <>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Camera Name</span>
+                      <span className="event-info-value">{selectedEvent.label}</span>
+                    </div>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Track ID</span>
+                      <span className="event-info-value">{selectedEvent.trackId}</span>
+                    </div>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Location</span>
+                      <span className="event-info-value">{selectedEvent.city}, {selectedEvent.area}</span>
+                    </div>
+                    {selectedEvent.district !== '—' && (
+                      <div className="event-info-item">
+                        <span className="event-info-label">District</span>
+                        <span className="event-info-value">{selectedEvent.district}</span>
+                      </div>
+                    )}
+                    {selectedEvent.street !== '—' && (
+                      <div className="event-info-item">
+                        <span className="event-info-label">Address</span>
+                        <span className="event-info-value">{selectedEvent.street} {selectedEvent.houseNumber}</span>
+                      </div>
+                    )}
+                    <div className="event-info-item">
+                      <span className="event-info-label">Created</span>
+                      <span className="event-info-value">{selectedEvent.when}</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Person</span>
+                      <span className="event-info-value">{selectedEvent.label}</span>
+                    </div>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Similarity</span>
+                      <span className="event-info-value">{selectedEvent.similarity}</span>
+                    </div>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Time</span>
+                      <span className="event-info-value">{selectedEvent.when}</span>
+                    </div>
+                    <div className="event-info-item">
+                      <span className="event-info-label">Location</span>
+                      <span className="event-info-value">{selectedEvent.city}, {selectedEvent.area}</span>
+                    </div>
+                  </>
+                )}
               </div>
-            </div>
-            <div className="popup-footer">
-              <button
-                className="popup-button primary"
-                onClick={() => setPopupOpen(false)}
-              >
-                Close
-              </button>
+             
             </div>
           </div>
         )}

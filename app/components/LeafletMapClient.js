@@ -38,10 +38,11 @@ const tsOf = (ev, fd) =>
   (ev?.create_time && Date.parse(ev.create_time)) ||
   0;
 
-export default function LeafletMapClient({ events = [] }) {
+export default function LeafletMapClient({ events = [], streams = [] }) {
   const mapRef = useRef(null);
   const containerRef = useRef(null);
   const layerGroupRef = useRef(null);
+  const streamLayerGroupRef = useRef(null);
 
   // Extract and normalize coordinates from an event
   const extractCoords = (ev) => {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 
 // Import leaflet CSS only (not the JS library)
@@ -89,88 +89,7 @@ const SOURCE_COORDS = {
 
 const imgUrl = (p) => (p?.startsWith('http') ? p : `${BASE}${p}`);
 
-// Generate mock data for all 40 cameras with optional seed for consistent generation
-function generateMockPersonData(seed) {
-  // Simple seeded random function
-  const seededRandom = function(max, min) {
-    max = max || 1;
-    min = min || 0;
-    seed = (seed * 9301 + 49297) % 233280;
-    const rnd = seed / 233280;
-    return min + rnd * (max - min);
-  };
 
-  const mockPersons = [
-    { name: 'John Smith', similarity: 0.92 },
-    { name: 'Sarah Johnson', similarity: 0.89 },
-    { name: 'Ahmed Khan', similarity: 0.95 },
-    { name: 'Maria Garcia', similarity: 0.88 },
-    { name: 'David Lee', similarity: 0.91 },
-    { name: 'Fatima Ali', similarity: 0.93 },
-    { name: 'Michael Brown', similarity: 0.87 },
-    { name: 'Aisha Patel', similarity: 0.90 },
-    { name: 'James Wilson', similarity: 0.86 },
-    { name: 'Zara Ahmed', similarity: 0.94 },
-    { name: 'Robert Chen', similarity: 0.91 },
-    { name: 'Sophia Kim', similarity: 0.88 },
-    { name: 'Omar Hassan', similarity: 0.93 },
-    { name: 'Emma Thompson', similarity: 0.89 },
-    { name: 'Carlos Rodriguez', similarity: 0.90 }
-  ];
-  
-  // Generate events for all cameras
-  const allEvents = [];
-  
-  // Use seed if provided, otherwise use current timestamp
-  seed = seed || Date.now();
-  
-  // Get all camera sources from SOURCE_COORDS
-  const cameraSources = Object.keys(SOURCE_COORDS);
-  
-  // For each camera, generate 1-3 random events
-  cameraSources.forEach(source => {
-    // Random number of events for this camera (1-3)
-    const numEvents = Math.floor(seededRandom() * 3) + 1;
-    
-    for (let i = 0; i < numEvents; i++) {
-      // Pick a random person from the mock data
-      const personIndex = Math.floor(seededRandom() * mockPersons.length);
-      const person = mockPersons[personIndex];
-      
-      // Random time in the last hour (but consistent with seed)
-      const randomMinutes = Math.floor(seededRandom() * 60);
-      const eventTime = new Date(Date.now() - randomMinutes * 60000);
-      
-      // Create the event
-      allEvents.push({
-        event_id: `${source}-${i}`,
-        source: source,
-        create_time: eventTime.toISOString(),
-        // Add latitude and longitude directly to the event for automatic location marking
-         latitude: SOURCE_COORDS[source][0],
-         longitude: SOURCE_COORDS[source][1],
-         face_detections: [{
-           image_origin: `/mock-images/person-${(personIndex % 10) + 1}.svg`,
-           detect_time: eventTime.toISOString(),
-           track_id: `track-${source}-${i}`
-         }],
-        top_match: {
-          label: person.name,
-          similarity: person.similarity
-        },
-        // Add location data with coordinates
-        location: {
-          geo_position: {
-            latitude: SOURCE_COORDS[source][0],
-            longitude: SOURCE_COORDS[source][1]
-          }
-        }
-      });
-    }
-  });
-  
-  return allEvents;
-}
 
 // --- helpers to spread overlapping markers ---
 
@@ -207,20 +126,12 @@ function groupByLatLng(items, precision = 6) {
   return map;
 }
 
-export default function EventsLeafletMap({ events = [] }) {
-  // Generate mock data if no events are provided
-  const displayEvents = useMemo(() => {
-    if (events && events.length > 0) {
-      return events;
-    }
-    // Generate mock data for all cameras
-    return generateMockPersonData(123); // Fixed seed for consistent generation
-  }, [events]);
-
+export default function EventsLeafletMap({ events = [], streams = [] }) {
+  const totalItems = events.length + streams.length;
   return (
     <div className="mb-4">
-      <h4 className="mb-3">Map — Wah Cantt Camera Network ({displayEvents.length} events)</h4>
-      <LeafletMap events={displayEvents} />
+      <h4 className="mb-3">Map — Wah Cantt Camera Network ({events.length} events, {streams.length} streams)</h4>
+      <LeafletMap events={events} streams={streams} />
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { Pie, Bar, Doughnut } from 'react-chartjs-2';
 import Image from "next/image";
 import Link from "next/link";
 import styles from "../dashboard/dashboard.module.css";
+import Sidebar from "../components/Sidebar";
 
 // Register ChartJS components
 ChartJS.register(
@@ -32,6 +33,7 @@ export default function StreamsPage() {
   const router = useRouter();
   const mapContainerRef = useRef(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Use same-origin proxy to avoid CORS
   const API = "/api/proxy/luna-streams/1/streams?page_size=100";
@@ -187,35 +189,7 @@ export default function StreamsPage() {
   if (loading && streams.length === 0) {
     return (
       <div className={styles.dashboardWrapper}>
-        <div className={styles.sidebar}>
-          <div className={styles.sidebarHeader}>
-            <div className={styles.sidebarLogo}>
-              <Image src="/camera-icon.svg" alt="Logo" width={24} height={24} />
-              <span>Stream Manager</span>
-            </div>
-          </div>
-          <div className={styles.navSection}>
-            <div className={styles.navSectionTitle}>Navigation</div>
-            <Link href="/" className={styles.navItem}>
-              <span className={styles.navIcon}>🏠</span> Home
-            </Link>
-            <Link href="/dashboard" className={styles.navItem}>
-              <span className={styles.navIcon}>📊</span> Dashboard
-            </Link>
-            <Link href="/live_view" className={styles.navItem}>
-              <span className={styles.navIcon}>📡</span> Live View
-            </Link>
-            <Link href="/dahua-fd" className={styles.navItem}>
-              <span className={styles.navIcon}>🎯</span> Dahua FD
-            </Link>
-            <Link href="/streams" className={`${styles.navItem} ${styles.navItemActive}`}>
-              <span className={styles.navIcon}>📹</span> Streams
-            </Link>
-            <Link href="/zone" className={styles.navItem}>
-              <span className={styles.navIcon}>🗺️</span> Zones
-            </Link>
-          </div>
-        </div>
+        <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
         <div className={styles.mainContent}>
           <div className="d-flex justify-content-center align-items-center" style={{ height: '80vh' }}>
             <div className="text-center">
@@ -233,35 +207,7 @@ export default function StreamsPage() {
   if (error && streams.length === 0) {
     return (
       <div className={styles.dashboardWrapper}>
-        <div className={styles.sidebar}>
-          <div className={styles.sidebarHeader}>
-            <div className={styles.sidebarLogo}>
-              <Image src="/camera-icon.svg" alt="Logo" width={24} height={24} />
-              <span>Stream Manager</span>
-            </div>
-          </div>
-          <div className={styles.navSection}>
-            <div className={styles.navSectionTitle}>Navigation</div>
-            <Link href="/" className={styles.navItem}>
-              <span className={styles.navIcon}>🏠</span> Home
-            </Link>
-            <Link href="/dashboard" className={styles.navItem}>
-              <span className={styles.navIcon}>📊</span> Dashboard
-            </Link>
-            <Link href="/live_view" className={styles.navItem}>
-              <span className={styles.navIcon}>📡</span> Live View
-            </Link>
-            <Link href="/dahua-fd" className={styles.navItem}>
-              <span className={styles.navIcon}>🎯</span> Dahua FD
-            </Link>
-            <Link href="/streams" className={`${styles.navItem} ${styles.navItemActive}`}>
-              <span className={styles.navIcon}>📹</span> Streams
-            </Link>
-            <Link href="/zone" className={styles.navItem}>
-              <span className={styles.navIcon}>🗺️</span> Zones
-            </Link>
-          </div>
-        </div>
+        <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
         <div className={styles.mainContent}>
           <div className="p-4">
             <div className="alert alert-danger" role="alert">
@@ -279,44 +225,24 @@ export default function StreamsPage() {
   
   return (
     <div className={styles.dashboardWrapper}>
-      <div className={styles.sidebar}>
-        <div className={styles.sidebarHeader}>
-          <div className={styles.sidebarLogo}>
-            <Image src="/camera-icon.svg" alt="Logo" width={24} height={24} />
-            <span>Stream Manager</span>
-          </div>
-        </div>
-        <div className={styles.navSection}>
-          <div className={styles.navSectionTitle}>Navigation</div>
-          <Link href="/" className={styles.navItem}>
-            <span className={styles.navIcon}>🏠</span> Home
-          </Link>
-          <Link href="/dashboard" className={styles.navItem}>
-            <span className={styles.navIcon}>📊</span> Dashboard
-          </Link>
-          <Link href="/live_view" className={styles.navItem}>
-            <span className={styles.navIcon}>📡</span> Live View
-          </Link>
-          <Link href="/dahua-fd" className={styles.navItem}>
-            <span className={styles.navIcon}>🎯</span> Dahua FD
-          </Link>
-          <Link href="/streams" className={`${styles.navItem} ${styles.navItemActive}`}>
-            <span className={styles.navIcon}>📹</span> Streams
-          </Link>
-          <Link href="/zone" className={styles.navItem}>
-            <span className={styles.navIcon}>🗺️</span> Zones
-          </Link>
-        </div>
-      </div>
+      <Sidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
       
       <div className={styles.mainContent}>
         {/* Dashboard Header */}
         <div className={styles.dashboardHeader}>
-          <div>
-            <h2 className={styles.pageTitle}>Streams Dashboard</h2>
-            <p className="text-muted mb-0">
-              Last updated: {refreshTime.toLocaleTimeString()} | {streams.length} total streams
-            </p>
+          <div className="d-flex align-items-center">
+            <button
+              className={`btn btn-outline-secondary d-md-none me-3`}
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+            >
+              <i className="bi bi-list"></i>
+            </button>
+            <div>
+              <h2 className={styles.pageTitle}>Streams Dashboard</h2>
+              <p className="text-muted mb-0">
+                Last updated: {refreshTime.toLocaleTimeString()} | {streams.length} total streams
+              </p>
+            </div>
           </div>
           <div className="d-flex gap-2">
             <button className={styles.refreshButton} onClick={handleRefresh}>

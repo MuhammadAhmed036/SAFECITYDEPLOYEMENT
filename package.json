@@ -2,11 +2,13 @@
   "name": "7august",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "setup-postgres": "node setup-postgres.js"
   },
   "dependencies": {
     "bootstrap": "^5.3.7",
@@ -14,6 +16,7 @@
     "dotenv": "^17.2.1",
     "framer-motion": "^12.23.12",
     "leaflet": "^1.9.4",
+    "leaflet-draw": "^1.0.4",
     "leaflet.markercluster": "^1.5.3",
     "next": "15.4.6",
     "pg": "^8.16.3",
@@ -21,7 +24,8 @@
     "react-bootstrap": "^2.10.10",
     "react-chartjs-2": "^5.3.0",
     "react-dom": "19.1.0",
-    "react-leaflet": "^5.0.0"
+    "react-leaflet": "^5.0.0",
+    "sqlite": "^5.1.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.11",

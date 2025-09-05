@@ -28,7 +28,7 @@ const nextConfig = {
       {
         protocol: 'http',
         hostname: '192.168.18.70',
-        port: '5000',
+        port: '8080',
         pathname: '/**',
       },
     ],
@@ -43,15 +43,15 @@ const nextConfig = {
       },
       {
         source: "/events-api/:path*",
-        destination: "http://192.168.18.70:5000/:path*", // Events API proxy
+        destination: "http://192.168.18.70:8080/:path*", // Events API proxy
       },
       {
         source: "/events/:path*",
-        destination: "http://192.168.18.70:5000/6/events/:path*", // Direct events API proxy
+        destination: "http://192.168.18.70:8080/api/luna-streams/1/streams/:path*", // Direct luna-streams API proxy
       },
       {
         source: "/images/:path*",
-        destination: "http://192.168.18.70:5000/6/images/:path*", // Images proxy
+        destination: "http://192.168.18.70:8080/6/images/:path*", // Images proxy
       },
     ];
   },
