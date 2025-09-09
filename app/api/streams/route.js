@@ -13,12 +13,14 @@ async function getLunaStreamsEndpoint() {
       const baseUrl = result.rows[0].url;
       return `${baseUrl}?order=desc&page=1&page_size=100`;
     }
-    // Fallback to default if not found in database
-    return 'http://192.168.18.70:8080/api/luna-streams/1/streams?order=desc&page=1&page_size=100';
+    // Fallback to environment variable or default if not found in database
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://192.168.18.70:8080';
+    return `${baseUrl}/api/luna-streams/1/streams?order=desc&page=1&page_size=100`;
   } catch (error) {
     console.error('Error fetching Luna streams endpoint from database:', error);
-    // Fallback to default
-    return 'http://192.168.18.70:8080/api/luna-streams/1/streams?order=desc&page=1&page_size=100';
+    // Fallback to environment variable or default
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://192.168.18.70:8080';
+    return `${baseUrl}/api/luna-streams/1/streams?order=desc&page=1&page_size=100`;
   }
 }
 

@@ -10,12 +10,14 @@ async function getDahuaEndpoint() {
     if (result.rows.length > 0) {
       return result.rows[0].url;
     }
-    // Fallback to default if not found in database
-    return 'http://192.168.18.28:14001/cameras';
+    // Fallback to environment variable or default if not found in database
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://192.168.18.28:14001';
+    return `${baseUrl}/cameras`;
   } catch (error) {
     console.error('Error fetching Dahua endpoint from database:', error);
-    // Fallback to default
-    return 'http://192.168.18.28:14001/cameras';
+    // Fallback to environment variable or default
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://192.168.18.28:14001';
+    return `${baseUrl}/cameras`;
   }
 }
 

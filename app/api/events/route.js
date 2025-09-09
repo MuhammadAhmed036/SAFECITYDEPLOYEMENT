@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 
-// Real API endpoint for events
-const EVENTS_API = 'http://192.168.18.70:5000/6/events';
+// Real API endpoint for events - use environment variable
+const EVENTS_API = process.env.NEXT_PUBLIC_API_BASE ? 
+  `${process.env.NEXT_PUBLIC_API_BASE}/6/events` : 
+  'http://192.168.18.70:5000/6/events';
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);

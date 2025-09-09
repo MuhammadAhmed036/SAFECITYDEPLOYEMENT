@@ -4,7 +4,10 @@ export async function GET(req, { params }) {
   // joins e.g. ["luna-streams","1","streams"] -> "luna-streams/1/streams"
   const upstreamPath = params.path?.join('/') ?? '';
   const search = req.nextUrl.search || ''; // includes "?page_size=100"
-  const upstreamURL = `http://192.168.18.70:8080/api/${upstreamPath}${search}`;
+  
+  // Use environment variable for base URL, fallback to localhost for development
+  const baseUrl = process.env.NEXT_PUBLIC_API_BASE || 'http://192.168.18.70:8080';
+  const upstreamURL = `${baseUrl}/api/${upstreamPath}${search}`;
 
   try {
     const res = await fetch(upstreamURL, { cache: 'no-store' });
