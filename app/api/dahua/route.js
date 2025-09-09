@@ -1,14 +1,33 @@
 import { NextResponse } from 'next/server';
+import { pool } from '../../../lib/db.js';
+
+// Function to get Dahua endpoint from database
+async function getDahuaEndpoint() {
+  try {
+    const result = await pool.query(
+      "SELECT url FROM endpoints WHERE name = 'dahua_direct' AND is_active = true LIMIT 1"
+    );
+    if (result.rows.length > 0) {
+      return result.rows[0].url;
+    }
+    // Fallback to default if not found in database
+    return 'http://192.168.18.28:14001/cameras';
+  } catch (error) {
+    console.error('Error fetching Dahua endpoint from database:', error);
+    // Fallback to default
+    return 'http://192.168.18.28:14001/cameras';
+  }
+}
 
 // Proxy API route for Dahua cameras
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
   const page = searchParams.get('page') || '1';
-  const pageSize = searchParams.get('page_size') || '200';
+  const pageSize = searchParams.get('page_size') || '1000';
   
-  // The actual Dahua API server URL
-  const API_BASE = 'http://192.168.18.38:8081';
-  const targetUrl = `${API_BASE}/cameras?page=${page}&page_size=${pageSize}`;
+  // Get Dahua endpoint from database
+  const DAHUA_API = await getDahuaEndpoint();
+  const targetUrl = `${DAHUA_API}?page=${page}&page_size=${pageSize}`;
   
   console.log('[Dahua API] Proxying request to:', targetUrl);
   

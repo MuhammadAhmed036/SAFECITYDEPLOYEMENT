@@ -6,15 +6,19 @@ import { useEffect, useRef } from "react";
 
 import "leaflet/dist/leaflet.css";
 
-// Fix marker icon issue
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
-});
-
 export default function ZoneMap({ selected, editingZone, onSelect }) {
   const markerRef = useRef();
+
+  // Fix marker icon issue in useEffect to avoid SSR issues
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      delete L.Icon.Default.prototype._getIconUrl;
+      L.Icon.Default.mergeOptions({
+        iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
+        shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
+      });
+    }
+  }, []);
 
   function LocationPicker() {
     useMapEvents({
@@ -27,7 +31,7 @@ export default function ZoneMap({ selected, editingZone, onSelect }) {
         const data = await res.json();
         const address = data.display_name || "Unknown";
 
-        const confirm = window.confirm(
+        const confirm = typeof window !== 'undefined' && window.confirm(
           `Address: ${address}\nLat: ${lat}, Lng: ${lng}\n\nDo you want to ${
             editingZone ? "update" : "save"
           } this zone?`

@@ -1,28 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import L from "leaflet";
 import dynamic from "next/dynamic";
-import "leaflet/dist/leaflet.css";
 
-const ZoneMap = dynamic(() => import("@/app/components/ZoneMap"), { ssr: false });
+// Dynamically import all Leaflet-related components with ssr: false
+const ZoneMap = dynamic(() => import("../components/ZoneMap"), { ssr: false });
 
-export default function ZonePage() {
+// Create a client-only wrapper for the entire zone page content
+const ZonePageContent = dynamic(() => Promise.resolve(ZonePageContentComponent), { ssr: false });
+
+function ZonePageContentComponent() {
   const [zones, setZones] = useState([]);
   const [showMap, setShowMap] = useState(false);
   const [editingZone, setEditingZone] = useState(null);
   const [selected, setSelected] = useState(null);
 
   const markerRef = useRef(null);
-
-  // Fix leaflet marker icon issue
-  useEffect(() => {
-    delete L.Icon.Default.prototype._getIconUrl;
-    L.Icon.Default.mergeOptions({
-      iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
-      shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
-    });
-  }, []);
 
   // Fetch zones from database
   useEffect(() => {
@@ -157,4 +150,8 @@ export default function ZonePage() {
       )}
     </div>
   );
+}
+
+export default function ZonePage() {
+  return <ZonePageContent />;
 }

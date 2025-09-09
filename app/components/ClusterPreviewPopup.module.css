@@ -223,6 +223,88 @@
   font-size: 18px;
 }
 
+/* Stream Info Styles */
+.streamInfo {
+  margin-bottom: 20px;
+}
+
+.cameraDetails {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cameraItem {
+  display: flex;
+  gap: 12px;
+  padding: 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  transition: all 0.2s;
+}
+
+.cameraItem:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
+.cameraIcon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 18px;
+}
+
+.cameraInfo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cameraName {
+  font-weight: 600;
+  color: #111827;
+  font-size: 14px;
+}
+
+.cameraType {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.trackId {
+  font-size: 11px;
+  color: #9ca3af;
+  font-family: monospace;
+}
+
+.moreItems {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  border: 1px dashed #d1d5db;
+  color: #6b7280;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.moreItems i {
+  font-size: 14px;
+}
+
 /* Actions */
 .actions {
   display: flex;

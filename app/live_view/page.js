@@ -129,19 +129,25 @@ function getHighestSimilarityUserData(ev) {
 }
 
 function collectImageCandidates(ev, fd) {
-  // Handle null image_origin by using source field with base URL
-  let processedImageOrigin = fd?.image_origin;
-  if (processedImageOrigin === null && ev?.source) {
-    // Extract filename from source URL and prepend with base URL
+  // Use sample_id with new base URL format instead of image_origin
+  let processedImageUrl = null;
+  if (fd?.sample_id) {
+    // Use the new sample_id format with the specified base URL
+    processedImageUrl = `http://192.168.18.70:5000/6/samples/faces/${fd.sample_id}`;
+  } else if (fd?.image_origin) {
+    // Fallback to image_origin if sample_id is not available
+    processedImageUrl = fd.image_origin;
+  } else if (fd?.image_origin === null && ev?.source) {
+    // Handle null image_origin by using source field with base URL
     const sourceUrl = ev.source;
     const filename = sourceUrl.split('/').pop(); // Get the last part after the last slash
     if (filename) {
-      processedImageOrigin = `http://192.168.18.89:8088/${filename}`;
+      processedImageUrl = `http://192.168.18.89:8088/${filename}`;
     }
   }
 
   const rawList = [
-    processedImageOrigin, ev?.snapshot, ev?.image, ev?.image_url, ev?.img, ev?.thumbnail,
+    processedImageUrl, ev?.snapshot, ev?.image, ev?.image_url, ev?.img, ev?.thumbnail,
     looksLikeImagePath(ev?.source) ? ev.source : null
   ].filter((c) => typeof c === 'string' && c.trim().length > 0)
    .map((s) => s.trim());
@@ -266,12 +272,15 @@ export default function LiveViewPage() {
   const [events, setEvents] = useState([]);
   const [streams, setStreams] = useState([]);
   const [dahuaCameras, setDahuaCameras] = useState([]);
+  const [streamEvents, setStreamEvents] = useState([]); // Events that match with streams/dahua for table display
   const [loading, setLoading] = useState(true);
   const [streamsLoading, setStreamsLoading] = useState(true);
   const [dahuaLoading, setDahuaLoading] = useState(true);
+  const [streamEventsLoading, setStreamEventsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [streamsError, setStreamsError] = useState(null);
   const [dahuaError, setDahuaError] = useState(null);
+  const [streamEventsError, setStreamEventsError] = useState(null);
   const [refreshTime, setRefreshTime] = useState(Date.now());
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [streamStatus, setStreamStatus] = useState('connecting');
@@ -281,7 +290,8 @@ export default function LiveViewPage() {
   const [polygonFilteredEvents, setPolygonFilteredEvents] = useState([]);
   const [polygonFilteredStreams, setPolygonFilteredStreams] = useState([]);
   const [polygonFilteredDahua, setPolygonFilteredDahua] = useState([]);
-  const [activeTab, setActiveTab] = useState('events'); // 'events', 'streams', or 'dahua'
+  const [activeTab, setActiveTab] = useState('events'); // 'events' or 'streams'
+  const [streamsSubTab, setStreamsSubTab] = useState('luna'); // 'luna' or 'dahua' - sub-tab within streams
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -435,7 +445,50 @@ export default function LiveViewPage() {
     setRefreshTime(Date.now());
   };
 
-  // Enhanced upsert function that applies location merging
+  // Function to update stream events with new incoming events that match streams/dahua
+  const updateStreamEventsFromNewEvents = (newEvents) => {
+    if (!Array.isArray(newEvents) || newEvents.length === 0) return;
+    
+    // Filter new events that match with streams or dahua cameras
+    const matchedNewEvents = newEvents.filter(event => {
+      // For Luna streams: match event.source with stream.name
+      const matchesLunaStream = event.source && streams.some(stream => stream.name === event.source);
+      
+      // For Dahua cameras: match event.track_id with camera.track_id
+      const matchesDahuaCamera = event.track_id && dahuaCameras.some(camera => camera.track_id === event.track_id);
+      
+      return matchesLunaStream || matchesDahuaCamera;
+    });
+    
+    if (matchedNewEvents.length > 0) {
+      console.log(`[LiveView] Adding ${matchedNewEvents.length} new matching events to stream events`);
+      
+      // Clear cluster cache when new events arrive to ensure fresh data in popups
+      setClusterCache(new Map());
+      
+      setStreamEvents(prevStreamEvents => {
+        // Create a set of existing event IDs to avoid duplicates
+        const existingEventIds = new Set(prevStreamEvents.map(event => 
+          event.event_id || `${event.source}-${event.create_time}`
+        ));
+        
+        // Filter out events that already exist
+        const newUniqueEvents = matchedNewEvents.filter(event => {
+          const eventKey = event.event_id || `${event.source}-${event.create_time}`;
+          return !existingEventIds.has(eventKey);
+        });
+        
+        if (newUniqueEvents.length > 0) {
+          // Add new events to the beginning (newest first) and cap the total
+          return [...newUniqueEvents, ...prevStreamEvents].slice(0, 500);
+        }
+        
+        return prevStreamEvents;
+      });
+    }
+  };
+
+  // Enhanced upsert function that applies location merging and updates stream events
   const upsertEventsWithLocationMerge = (incoming, streamsData) => {
     const list = Array.isArray(incoming) ? incoming : [incoming];
     if (!list.length) return;
@@ -456,6 +509,9 @@ export default function LiveViewPage() {
     }
     
     upsertEvents(mergedEvents);
+    
+    // Update stream events with new matching events
+    updateStreamEventsFromNewEvents(mergedEvents);
   };
 
   // Back command functionality - restore from backup
@@ -482,7 +538,7 @@ export default function LiveViewPage() {
   const checkServerHealth = async () => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
       
       const res = await fetch(EVENTS_API, { 
         cache: 'no-store', 
@@ -504,16 +560,10 @@ export default function LiveViewPage() {
       const apiUrl = useMock ? '/api/mock/events' : EVENTS_API;
       console.log(`[LiveView] Loading ${useMock ? 'mock' : 'real'} data from ${apiUrl}...`);
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 second timeout
-      
       const res = await fetch(apiUrl, { 
         cache: 'no-store', 
-        headers: { 'Cache-Control': 'no-cache' },
-        signal: controller.signal
+        headers: { 'Cache-Control': 'no-cache' } 
       });
-      
-      clearTimeout(timeoutId);
       
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -544,16 +594,10 @@ export default function LiveViewPage() {
       const apiUrl = useMock ? '/api/mock/streams' : STREAMS_API;
       console.log(`[LiveView] Loading ${useMock ? 'mock' : 'real'} streams data from ${apiUrl}...`);
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 second timeout
-      
       const res = await fetch(apiUrl, { 
         cache: 'no-store', 
-        headers: { 'Cache-Control': 'no-cache' },
-        signal: controller.signal
+        headers: { 'Cache-Control': 'no-cache' } 
       });
-      
-      clearTimeout(timeoutId);
       
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -583,16 +627,10 @@ export default function LiveViewPage() {
       const apiUrl = useMock ? '/api/mock/dahua' : DAHUA_API;
       console.log(`[LiveView] Loading ${useMock ? 'mock' : 'real'} Dahua cameras data from ${apiUrl}...`);
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 second timeout
-      
       const res = await fetch(apiUrl, { 
         cache: 'no-store', 
-        headers: { 'Cache-Control': 'no-cache' },
-        signal: controller.signal
+        headers: { 'Cache-Control': 'no-cache' } 
       });
-      
-      clearTimeout(timeoutId);
       
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
@@ -619,6 +657,76 @@ export default function LiveViewPage() {
     }
   };
 
+  // Function to load stream events (events that match with streams/dahua for table display)
+  const loadStreamEventsData = async (useMock = false) => {
+    try {
+      // First, try to get events from API
+      const apiUrl = useMock ? '/api/mock/events' : getEndpointWithFallback('stream_events_direct', endpointsMap, 'http://192.168.18.70:5000/6/events?page=1&page_size=900');
+      console.log(`[LiveView] Loading ${useMock ? 'mock' : 'real'} stream events data from ${apiUrl}...`);
+      
+      let eventsList = [];
+      
+      try {
+        const res = await fetch(apiUrl, { 
+          cache: 'no-store', 
+          headers: { 'Cache-Control': 'no-cache' } 
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          eventsList = Array.isArray(data?.events) ? data.events : [];
+          console.log(`[LiveView] Loaded ${eventsList.length} ${useMock ? 'mock' : 'real'} events from API`);
+        } else {
+          throw new Error(`HTTP ${res.status}`);
+        }
+      } catch (apiError) {
+        console.log(`[LiveView] API failed, using existing events data:`, apiError.message);
+        // If API fails, use the existing events data
+        eventsList = events;
+      }
+      
+      // Debug logging for matching logic
+      console.log(`[LiveView] Filtering ${eventsList.length} events against ${streams.length} streams and ${dahuaCameras.length} dahua cameras`);
+      
+      if (streams.length > 0) {
+        console.log('[LiveView] Sample stream names:', streams.slice(0, 3).map(s => s.name));
+      }
+      if (dahuaCameras.length > 0) {
+        console.log('[LiveView] Sample dahua track_ids:', dahuaCameras.slice(0, 3).map(c => c.track_id));
+      }
+      if (eventsList.length > 0) {
+        console.log('[LiveView] Sample event sources:', eventsList.slice(0, 3).map(e => e.source));
+        console.log('[LiveView] Sample event track_ids:', eventsList.slice(0, 3).map(e => e.track_id));
+      }
+      
+      // Filter events that match with streams or dahua cameras
+      const matchedEvents = eventsList.filter(event => {
+        // For Luna streams: match event.source with stream.name
+        const matchesLunaStream = event.source && streams.some(stream => stream.name === event.source);
+        
+        // For Dahua cameras: match event.track_id with camera.track_id
+        const matchesDahuaCamera = event.track_id && dahuaCameras.some(camera => camera.track_id === event.track_id);
+        
+        return matchesLunaStream || matchesDahuaCamera;
+      });
+      
+      console.log(`[LiveView] Found ${matchedEvents.length} events matching streams/dahua cameras`);
+      
+      setStreamEvents(matchedEvents);
+      setStreamEventsError(null);
+      
+      return true;
+    } catch (e) {
+      console.error(`[LiveView] Error loading ${useMock ? 'mock' : 'real'} stream events data:`, e.message);
+      if (!useMock) {
+        setStreamEventsError(`Server unavailable (${e.message}). Switching to mock data...`);
+      } else {
+        setStreamEventsError(`Failed to load stream events data: ${e.message}`);
+      }
+      return false;
+    }
+  };
+
   // Load endpoints from database
   useEffect(() => {
     const loadEndpoints = async () => {
@@ -637,6 +745,7 @@ export default function LiveViewPage() {
             events: EVENTS_API,
             streams: STREAMS_API,
             dahua: DAHUA_API,
+            streamEvents: getEndpointWithFallback('stream_events_direct', result.endpoints, 'http://192.168.18.70:5000/6/events?page=1&page_size=900'),
             websocket: EVENTS_WS
           });
         } else {
@@ -689,11 +798,48 @@ export default function LiveViewPage() {
         setLoading(false);
         setStreamsLoading(false);
         setDahuaLoading(false);
+        setStreamEventsLoading(false);
       }
     })();
     
     return () => { cancelled = true; };
   }, [endpointsLoaded]);
+
+  // Load stream events when streams or dahua data changes
+  useEffect(() => {
+    if (streamsLoading || dahuaLoading) {
+      return; // Wait for both streams and dahua data loading to complete
+    }
+    
+    // Only proceed if we have at least one data source (streams OR dahua)
+    if (streams.length === 0 && dahuaCameras.length === 0) {
+      console.log('[LiveView] No streams or dahua cameras available, skipping stream events load');
+      setStreamEventsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    
+    (async () => {
+      if (cancelled) return;
+      
+      setStreamEventsLoading(true);
+      
+      // Load stream events data
+      const realStreamEventsLoaded = await loadStreamEventsData(false);
+      
+      if (!realStreamEventsLoaded && !cancelled) {
+        console.log('[LiveView] Falling back to mock stream events data...');
+        await loadStreamEventsData(true);
+      }
+      
+      if (!cancelled) {
+        setStreamEventsLoading(false);
+      }
+    })();
+    
+    return () => { cancelled = true; };
+  }, [streams, dahuaCameras, streamsLoading, dahuaLoading]);
 
   // ---------- WebSocket with exponential backoff ----------
   useEffect(() => {
@@ -709,16 +855,7 @@ export default function LiveViewPage() {
       if (!ENABLE_POLL_FALLBACK || pollTimer) return;
       pollTimer = setInterval(async () => {
         try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 35000); // 35 second timeout
-          
-          const res = await fetch(EVENTS_API, { 
-            cache: 'no-store', 
-            headers: { 'Cache-Control': 'no-cache' },
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeoutId);
+          const res = await fetch(EVENTS_API, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
           if (!res.ok) return;
           const data = await res.json();
           const list = Array.isArray(data?.events) ? data.events : [];
@@ -975,6 +1112,74 @@ export default function LiveViewPage() {
     return filtered;
   }, [polygonFilteredDahua, selectedCity, searchTerm]);
 
+  // Filter stream events based on selected city, search term, and sub-tab
+  const filteredStreamEvents = useMemo(() => {
+    let filtered = streamEvents;
+    
+    // Filter by city
+    if (selectedCity !== 'All') {
+      filtered = filtered.filter(event => event?.location?.city === selectedCity);
+    }
+    
+    // Filter by search term
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase().trim();
+      filtered = filtered.filter(event => {
+        const source = (event?.source || '').toLowerCase();
+        const label = (event?.top_match?.label || event?.user_data || '').toLowerCase();
+        return source.includes(term) || label.includes(term);
+      });
+    }
+    
+    // Filter by sub-tab (Luna vs Dahua)
+    if (streamsSubTab === 'luna') {
+      // Show only events that match Luna streams
+      filtered = filtered.filter(event => {
+        return streams.some(stream => stream.name === event.source);
+      });
+    } else if (streamsSubTab === 'dahua') {
+      // Show only events that match Dahua cameras
+      filtered = filtered.filter(event => {
+        return dahuaCameras.some(camera => camera.track_id === event.track_id);
+      });
+    }
+    
+    return filtered;
+  }, [streamEvents, selectedCity, searchTerm, streamsSubTab, streams, dahuaCameras]);
+
+  // Filter stream events for cluster when active
+  const clusterFilteredStreamEvents = useMemo(() => {
+    if (!showClusterData) return filteredStreamEvents;
+    
+    return filteredStreamEvents.filter(event => {
+      const lat = event?.location?.geo_position?.latitude;
+      const lng = event?.location?.geo_position?.longitude;
+      
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+      
+      // Check if event is within any of the cluster data points
+      return clusterData.some(clusterEvent => {
+        const clusterLat = clusterEvent?.location?.geo_position?.latitude;
+        const clusterLng = clusterEvent?.location?.geo_position?.longitude;
+        
+        if (!Number.isFinite(clusterLat) || !Number.isFinite(clusterLng)) return false;
+        
+        // Consider events within a small radius as part of the same cluster
+        const latDiff = Math.abs(lat - clusterLat);
+        const lngDiff = Math.abs(lng - clusterLng);
+        return latDiff < 0.001 && lngDiff < 0.001; // ~100m radius
+      });
+    });
+  }, [filteredStreamEvents, clusterData, showClusterData]);
+
+  // Paginated stream events - use cluster data if available
+  const paginatedStreamEvents = useMemo(() => {
+    const dataToUse = showClusterData ? clusterFilteredStreamEvents : filteredStreamEvents;
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return dataToUse.slice(startIndex, endIndex);
+  }, [clusterFilteredStreamEvents, filteredStreamEvents, showClusterData, currentPage, itemsPerPage]);
+
   // Get unique cities for filter dropdown
   const availableCities = useMemo(() => {
     const eventCities = events.map(ev => ev?.location?.city).filter(Boolean);
@@ -1167,10 +1372,12 @@ export default function LiveViewPage() {
           <LiveViewMap 
             events={activeTab === 'events' ? polygonFilteredEvents : []}
             streams={activeTab === 'streams' ? polygonFilteredStreams : []}
-            dahua={activeTab === 'dahua' ? polygonFilteredDahua : []}
+            dahua={activeTab === 'streams' ? polygonFilteredDahua : []}
+            realTimeStreamEvents={streamEvents}
             onPolygonChange={handlePolygonChange}
             streamStatus={streamStatus}
             activeTab={activeTab}
+            streamsSubTab={streamsSubTab}
             onClusterClick={handleClusterClick}
           />
         </div>
@@ -1206,7 +1413,7 @@ export default function LiveViewPage() {
         )}
 
         {/* Tab Navigation */}
-        <div className="mb-3">
+        <div className={`mb-3 ${styles.tabNavigation}`}>
           <div className="d-flex gap-2">
             <button 
               className={`btn ${activeTab === 'events' ? 'btn-primary' : 'btn-outline-primary'} d-flex align-items-center gap-2`}
@@ -1225,29 +1432,44 @@ export default function LiveViewPage() {
               onClick={() => setActiveTab('streams')}
             >
               <i className="bi bi-broadcast"></i>
-              Streams ({filteredStreams.length})
-            </button>
-            <button 
-              className={`btn ${activeTab === 'dahua' ? 'btn-primary' : 'btn-outline-primary'} d-flex align-items-center gap-2`}
-              onClick={() => setActiveTab('dahua')}
-            >
-              <i className="bi bi-camera"></i>
-              Dahua ({filteredDahua.length})
+              Streams ({filteredStreams.length + filteredDahua.length})
             </button>
           </div>
+          
+          {/* Streams Sub-tabs */}
+          {activeTab === 'streams' && (
+            <div className="mt-2">
+              <div className="d-flex gap-2">
+                <button 
+                  className={`btn btn-sm ${streamsSubTab === 'luna' ? 'btn-success' : 'btn-outline-success'} d-flex align-items-center gap-2`}
+                  onClick={() => setStreamsSubTab('luna')}
+                >
+                  <i className="bi bi-broadcast"></i>
+                  Luna Streams ({filteredStreams.length})
+                </button>
+                <button 
+                  className={`btn btn-sm ${streamsSubTab === 'dahua' ? 'btn-success' : 'btn-outline-success'} d-flex align-items-center gap-2`}
+                  onClick={() => setStreamsSubTab('dahua')}
+                >
+                  <i className="bi bi-camera"></i>
+                  Dahua Cameras ({filteredDahua.length})
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Events/Streams/Dahua Table */}
+        {/* Events/Streams Table */}
         <div className={styles.tableCard}>
           <div className={styles.chartCardHeader}>
-            <i className={`bi bi-table ${styles.chartCardIcon}`}></i> {activeTab === 'events' ? 'Events' : activeTab === 'streams' ? 'Streams' : 'Dahua Cameras'}
+            <i className={`bi bi-table ${styles.chartCardIcon}`}></i> {activeTab === 'events' ? 'Events' : activeTab === 'streams' ? (streamsSubTab === 'luna' ? 'Luna Streams' : 'Dahua Cameras') : 'Data'}
             <div className="ms-auto d-flex align-items-center gap-3">
               <span className="text-muted small">
                 {activeTab === 'events' 
                   ? `${filteredEvents.length} with location${eventsWithoutLocation.length > 0 ? ` + ${eventsWithoutLocation.length} without location` : ''} of ${polygonFilteredEvents.length} in polygon (${events.length} total)`
                   : activeTab === 'streams'
-                  ? `${filteredStreams.length} of ${polygonFilteredStreams.length} in polygon (${streams.length} total)`
-                  : `${filteredDahua.length} of ${polygonFilteredDahua.length} in polygon (${dahuaCameras.length} total)`
+                  ? `${filteredStreamEvents.length} events matching ${streamsSubTab === 'luna' ? 'Luna streams' : 'Dahua cameras'} (${streamEvents.length} total stream events)`
+                  : ''
                 }
               </span>
               {polygonBounds && (
@@ -1261,7 +1483,7 @@ export default function LiveViewPage() {
           {/* Filter Controls */}
           <div className="p-3 border-bottom bg-light">
             <div className="row g-3 align-items-center">
-              <div className="col-md-4">
+              <div className="col-md-4 col-12">
                 <label className="form-label small fw-semibold mb-1">
                   <i className="bi bi-geo-alt me-1"></i>Filter by City
                 </label>
@@ -1279,14 +1501,14 @@ export default function LiveViewPage() {
                   ))}
                 </select>
               </div>
-              <div className="col-md-6">
+              <div className="col-md-6 col-12">
                 <label className="form-label small fw-semibold mb-1">
                   <i className="bi bi-search me-1"></i>Search Events
                 </label>
                 <input
                   type="text"
                   className="form-control form-control-sm"
-                  placeholder={activeTab === 'events' ? 'Search by area, camera, or person...' : activeTab === 'streams' ? 'Search by area, name, or account...' : 'Search by camera name, area, or city...'}
+                  placeholder={activeTab === 'events' ? 'Search by area, camera, or person...' : activeTab === 'streams' && streamsSubTab === 'luna' ? 'Search by area, name, or account...' : activeTab === 'streams' && streamsSubTab === 'dahua' ? 'Search by camera name, area, or city...' : 'Search...'}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   style={{
@@ -1295,8 +1517,8 @@ export default function LiveViewPage() {
                   }}
                 />
               </div>
-              <div className="col-md-2">
-                <label className="form-label small fw-semibold mb-1 text-transparent">Actions</label>
+              <div className="col-md-2 col-12">
+                <label className="form-label small fw-semibold mb-1 d-md-block d-none text-transparent">Actions</label>
                 <button
                   className="btn btn-outline-secondary btn-sm w-100"
                   onClick={() => {
@@ -1672,122 +1894,179 @@ export default function LiveViewPage() {
                 )}
               </>
             ) : activeTab === 'streams' ? (
-              // Streams Table
+              // Streams Section - Show Events that match with Luna/Dahua
               <>
-                {streamsLoading && <p className="alert alert-info">Loading streams…</p>}
-                {streamsError && <p className="alert alert-danger">{streamsError}</p>}
-                {!streamsLoading && !streamsError && filteredStreams.length === 0 && streams.length > 0 && (
+                {streamEventsLoading && <p className="alert alert-info">Loading stream events…</p>}
+                {streamEventsError && <p className="alert alert-danger">{streamEventsError}</p>}
+                {!streamEventsLoading && !streamEventsError && filteredStreamEvents.length === 0 && streamEvents.length > 0 && (
                   <div className="alert alert-warning mb-0">
                     <i className="bi bi-funnel me-2"></i>
-                    No streams match your current filters. Try adjusting the city filter or search term.
+                    No events match your current filters for {streamsSubTab === 'luna' ? 'Luna streams' : 'Dahua cameras'}. Try adjusting the filters.
                   </div>
                 )}
-                {!streamsLoading && !streamsError && filteredStreams.length > 0 && (
-                  <div className="table-responsive">
-                    <table className="table table-striped table-bordered align-middle">
-                      <thead className="table-dark">
-                        <tr>
-                          <th>Stream Name</th>
-                          <th>Account ID</th>
-                          <th>Status</th>
-                          <th>City</th>
-                          <th>Area</th>
-                          <th>Lat</th>
-                          <th>Lng</th>
-                          <th>Created</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(filteredStreams || []).map((stream, i) => {
-                          const city = stream?.location?.city || '—';
-                          const area = stream?.location?.area || '—';
-                          const lat = stream?.location?.geo_position?.latitude;
-                          const lng = stream?.location?.geo_position?.longitude;
-                          const when = stream?.create_time || '—';
-                          const status = stream?.status || 'unknown';
-                          const statusColor = status === 'active' ? '#28a745' : status === 'inactive' ? '#dc3545' : '#6c757d';
+                {!streamEventsLoading && !streamEventsError && streamEvents.length === 0 && (
+                  <div className="alert alert-info mb-0">
+                    <i className="bi bi-info-circle me-2"></i>
+                    No events found that match with {streamsSubTab === 'luna' ? 'Luna streams' : 'Dahua cameras'}. Events will appear here when their source matches stream names or camera track IDs.
+                  </div>
+                )}
+                {!streamEventsLoading && !streamEventsError && filteredStreamEvents.length > 0 && (
+                  <>
+                    <div className="d-flex justify-content-between align-items-center mb-3 px-3">
+                      <div className="text-muted small">
+                        Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length)} of {showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length} events
+                      </div>
+                      <div className="d-flex align-items-center gap-2">
+                        <label className="form-label small mb-0">Items per page:</label>
+                        <select 
+                          className="form-select form-select-sm" 
+                          style={{ width: 'auto' }}
+                          value={itemsPerPage}
+                          onChange={(e) => {
+                            setItemsPerPage(Number(e.target.value));
+                            setCurrentPage(1);
+                          }}
+                        >
+                          <option value={10}>10</option>
+                          <option value={20}>20</option>
+                          <option value={50}>50</option>
+                          <option value={100}>100</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="table-responsive">
+                      <table className="table table-striped table-bordered align-middle">
+                        <thead className="table-dark">
+                          <tr>
+                            <th style={{ whiteSpace: 'nowrap' }}>Camera (source)</th>
+                            <th>Detected Image</th>
+                            <th>Original Image</th>
+                            <th>Label</th>
+                            <th>Name</th>
+                            <th>Similarity</th>
+                            <th>Date/Time</th>
+                            <th>City</th>
+                            <th>Area</th>
+                            <th>Lat</th>
+                            <th>Lng</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paginatedStreamEvents.map((ev, i) => {
+                            const fd = Array.isArray(ev?.face_detections) && ev.face_detections.length > 0 ? ev.face_detections[0] : null;
+                            const img = collectImageCandidates(ev, fd);
+                            const sim = typeof ev?.top_match?.similarity === 'number' ? `${(ev.top_match.similarity * 100).toFixed(1)}%` : '—';
+                            const simValue = ev?.top_match?.similarity || 0;
+                            const simColor = simValue > 0.9 ? '#28a745' : simValue > 0.8 ? '#ffc107' : '#dc3545';
+                            const when = ev?.create_time || fd?.detect_time || '—';
+                            const city = ev?.location?.city || '—';
+                            const area = ev?.location?.area || '—';
+                            const lat = ev?.location?.geo_position?.latitude;
+                            const lng = ev?.location?.geo_position?.longitude;
+                            const userData = getHighestSimilarityUserData(ev);
 
-                          return (
-                            <tr key={stream?.stream_id || i}>
-                              <td>{stream?.name || '—'}</td>
-                              <td>{stream?.account_id || '—'}</td>
-                              <td>
-                                <span style={{ 
-                                  color: statusColor, 
-                                  fontWeight: 'bold',
-                                  padding: '2px 6px',
-                                  borderRadius: '4px',
-                                  backgroundColor: `${statusColor}20`
-                                }}>
-                                  {status}
-                                </span>
-                              </td>
-                              <td>{city}</td>
-                              <td>{area}</td>
-                              <td>{Number.isFinite(lat) ? Number(lat).toFixed(5) : '—'}</td>
-                              <td>{Number.isFinite(lng) ? Number(lng).toFixed(5) : '—'}</td>
-                              <td suppressHydrationWarning>{when && typeof window !== 'undefined' ? new Date(when).toLocaleString() : when}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                            return (
+                              <tr key={ev?.event_id || i}>
+                                <td style={{ whiteSpace: 'nowrap' }}>{ev?.source || '—'}</td>
+                                <td>{img ? <ImageTry urls={img} alt="snapshot" /> : <span style={{ fontSize: 12, color: '#6b7280' }}>No image</span>}</td>
+                                <td><OriginalSnapshot faceId={ev?.top_match?.face_id} /></td>
+                                <td>{ev?.top_match?.label || ev?.user_data || '—'}</td>
+                                <td>{userData}</td>
+                                <td>
+                                  <span style={{ 
+                                    color: simColor, 
+                                    fontWeight: 'bold',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    backgroundColor: `${simColor}20`
+                                  }}>
+                                    {sim}
+                                  </span>
+                                </td>
+                                <td suppressHydrationWarning>{when && typeof window !== 'undefined' ? new Date(when).toLocaleString() : when}</td>
+                                <td>{city}</td>
+                                <td>{area}</td>
+                                <td>{Number.isFinite(lat) ? Number(lat).toFixed(5) : '—'}</td>
+                                <td>{Number.isFinite(lng) ? Number(lng).toFixed(5) : '—'}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    
+                    {/* Pagination for Stream Events */}
+                    <div className="d-flex justify-content-between align-items-center mt-3">
+                      <div className="text-muted small">
+                        Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length)} of {showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length} events
+                      </div>
+                      <nav>
+                        <ul className="pagination pagination-sm mb-0">
+                          <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                            <button 
+                              className="page-link" 
+                              onClick={() => setCurrentPage(1)}
+                              disabled={currentPage === 1}
+                            >
+                              First
+                            </button>
+                          </li>
+                          <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                            <button 
+                              className="page-link" 
+                              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                              disabled={currentPage === 1}
+                            >
+                              Previous
+                            </button>
+                          </li>
+                          
+                          {(() => {
+                            const totalStreamPages = Math.ceil((showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length) / itemsPerPage);
+                            const pages = [];
+                            const startPage = Math.max(1, currentPage - 2);
+                            const endPage = Math.min(totalStreamPages, currentPage + 2);
+                            
+                            for (let i = startPage; i <= endPage; i++) {
+                              pages.push(
+                                <li key={i} className={`page-item ${currentPage === i ? 'active' : ''}`}>
+                                  <button 
+                                    className="page-link" 
+                                    onClick={() => setCurrentPage(i)}
+                                  >
+                                    {i}
+                                  </button>
+                                </li>
+                              );
+                            }
+                            return pages;
+                          })()}
+                          
+                          <li className={`page-item ${currentPage === Math.ceil((showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length) / itemsPerPage) ? 'disabled' : ''}`}>
+                            <button 
+                              className="page-link" 
+                              onClick={() => setCurrentPage(prev => Math.min(Math.ceil((showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length) / itemsPerPage), prev + 1))}
+                              disabled={currentPage === Math.ceil((showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length) / itemsPerPage)}
+                            >
+                              Next
+                            </button>
+                          </li>
+                          <li className={`page-item ${currentPage === Math.ceil((showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length) / itemsPerPage) ? 'disabled' : ''}`}>
+                            <button 
+                              className="page-link" 
+                              onClick={() => setCurrentPage(Math.ceil((showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length) / itemsPerPage))}
+                              disabled={currentPage === Math.ceil((showClusterData ? clusterFilteredStreamEvents.length : filteredStreamEvents.length) / itemsPerPage)}
+                            >
+                              Last
+                            </button>
+                          </li>
+                        </ul>
+                      </nav>
+                    </div>
+                  </>
                 )}
               </>
-            ) : (
-              // Dahua Cameras Table
-              <>
-                {dahuaLoading && <p className="alert alert-info">Loading Dahua cameras…</p>}
-                {dahuaError && <p className="alert alert-danger">{dahuaError}</p>}
-                {!dahuaLoading && !dahuaError && filteredDahua.length === 0 && dahuaCameras.length > 0 && (
-                  <div className="alert alert-warning mb-0">
-                    <i className="bi bi-funnel me-2"></i>
-                    No Dahua cameras match your current filters. Try adjusting the city filter or search term.
-                  </div>
-                )}
-                {!dahuaLoading && !dahuaError && filteredDahua.length > 0 && (
-                  <div className="table-responsive">
-                    <table className="table table-striped table-bordered align-middle">
-                      <thead className="table-dark">
-                        <tr>
-                          <th>Camera Name</th>
-                          <th>Track ID</th>
-                          <th>Lat</th>
-                          <th>Lon</th>
-                          <th>City</th>
-                          <th>Area</th>
-                          <th>District</th>
-                          <th>Street</th>
-                          <th>House Number</th>
-                          <th>Created At</th>
-                          <th>Updated At</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(filteredDahua || []).map((camera, i) => {
-                          return (
-                            <tr key={camera?.id || i}>
-                              <td>{camera?.camera_name || '—'}</td>
-                              <td>{camera?.track_id || '—'}</td>
-                              <td>{Number.isFinite(camera?.lat) ? Number(camera.lat).toFixed(5) : '—'}</td>
-                              <td>{Number.isFinite(camera?.lon) ? Number(camera.lon).toFixed(5) : '—'}</td>
-                              <td>{camera?.city || '—'}</td>
-                              <td>{camera?.area || '—'}</td>
-                              <td>{camera?.district || '—'}</td>
-                              <td>{camera?.street || '—'}</td>
-                              <td>{camera?.house_number || '—'}</td>
-                              <td suppressHydrationWarning>{camera?.created_at && typeof window !== 'undefined' ? new Date(camera.created_at).toLocaleString() : camera?.created_at || '—'}</td>
-                              <td suppressHydrationWarning>{camera?.updated_at && typeof window !== 'undefined' ? new Date(camera.updated_at).toLocaleString() : camera?.updated_at || '—'}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

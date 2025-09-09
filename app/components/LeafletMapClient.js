@@ -19,6 +19,15 @@ const buildImageUrl = (p) => {
 const looksLikeImagePath = (p) => typeof p === 'string' && /\.(png|jpe?g|gif|bmp|webp|svg)(\?.*)?$/i.test(p.trim());
 
 const pickEventImage = (ev, fd) => {
+  // Check for face_detections with sample_id first
+  if (ev?.face_detections && Array.isArray(ev.face_detections) && ev.face_detections.length > 0) {
+    const faceDetection = ev.face_detections[0];
+    if (faceDetection.sample_id) {
+      return `http://192.168.18.70:5000/6/samples/faces/${faceDetection.sample_id}`;
+    }
+  }
+  
+  // Fallback to other image sources
   const candidates = [
     fd?.image_origin,
     ev?.snapshot,
@@ -144,11 +153,15 @@ export default function LeafletMapClient({ events = [], streams = [] }) {
 
     const invalidate = () => map.invalidateSize();
     const id = setTimeout(invalidate, 300);
-    window.addEventListener('resize', invalidate);
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', invalidate);
+    }
 
     return () => {
       clearTimeout(id);
-      window.removeEventListener('resize', invalidate);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('resize', invalidate);
+      }
       map.remove();
       mapRef.current = null;
       layerGroupRef.current = null;

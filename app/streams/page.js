@@ -29,10 +29,7 @@ const StreamMap = dynamic(
 );
 
 export default function StreamsPage() {
-  const fileInputRef = useRef(null);
   const router = useRouter();
-  const mapContainerRef = useRef(null);
-  const [isFullscreen, setIsFullscreen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   
   // Use same-origin proxy to avoid CORS
@@ -42,6 +39,7 @@ export default function StreamsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshTime, setRefreshTime] = useState(new Date());
+  const fileInputRef = useRef(null);
   
   const [cityData, setCityData] = useState({ labels: [], data: [] });
   const [statusData, setStatusData] = useState({ labels: [], data: [], backgroundColor: [] });
@@ -50,18 +48,23 @@ export default function StreamsPage() {
   
   useEffect(() => {
     fetchStreams();
-    
-    // Add resize observer for map container
-    if (mapContainerRef.current) {
-      const resizeObserver = new ResizeObserver(() => {
-        // Trigger map resize event
-        window.dispatchEvent(new Event('resize'));
-      });
-      
-      resizeObserver.observe(mapContainerRef.current);
-      return () => resizeObserver.disconnect();
-    }
   }, []);
+
+  const handleRefresh = () => {
+    fetchStreams();
+  };
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      console.log('File selected:', file.name);
+      // Add file processing logic here
+    }
+  };
   
   async function fetchStreams() {
     try {
@@ -88,6 +91,8 @@ export default function StreamsPage() {
       setLoading(false);
     }
   }
+
+
   
   const processChartData = (list) => {
     const cities = {};
@@ -129,21 +134,9 @@ export default function StreamsPage() {
     setLocationInfo({ available, unavailable });
   };
   
-  const handleRefresh = async () => {
-    await fetchStreams();
-  };
+
   
-  const handleImportClick = () => {
-    fileInputRef.current.click();
-  };
-  
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      alert(`Imported file: ${file.name}`);
-      // Add your CSV handling logic here
-    }
-  };
+
   
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);
@@ -365,90 +358,105 @@ export default function StreamsPage() {
           </div>
         </div>
         
-        
         {/* Streams Table */}
-        <div className={styles.tableCard}>
-          <div className={styles.chartCardHeader}>
-            <span className={styles.chartCardIcon}><i className="bi bi-table"></i></span>
-            All Streams
-            <div className="ms-auto">
-              <button className="btn btn-sm btn-outline-secondary me-2" onClick={handleImportClick}>
-                <i className="bi bi-upload me-1"></i> Import
-              </button>
-              <input
-                type="file"
-                accept=".csv"
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                style={{ display: "none" }}
-              />
-              <button className="btn btn-sm btn-outline-primary" onClick={() => router.push("/streams/create")}>
-                <i className="bi bi-plus-lg me-1"></i> Create
-              </button>
-            </div>
-          </div>
-          <div className="table-responsive">
-            <table className="table table-hover mb-0">
-              <thead className={styles.tableHeader}>
-                <tr>
-                  <th>Stream ID</th>
-                  <th>Name</th>
-                  <th>Location</th>
-                  <th>Status</th>
-                  <th>Autorestart</th>
-                  <th>Created</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {streams.map((stream) => (
-                  <tr key={stream.stream_id} className={styles.tableRow}>
-                    <td><code>{stream.stream_id.substring(0, 8)}...</code></td>
-                    <td>{stream.name}</td>
-                    <td>
-                      {stream.location?.city ? (
-                        <span>
-                          <i className="bi bi-geo-alt text-primary me-1"></i>
-                          {stream.location.city}, {stream.location.area || 'N/A'}
-                        </span>
-                      ) : (
-                        <span className="badge bg-secondary">No Location</span>
-                      )}
-                    </td>
-                    <td>
-                      <span className={`${styles.statusBadge} ${
-                        stream.status === 'active' ? styles.statusActive : 
-                        stream.status === 'pause' ? styles.statusInactive : 
-                        styles.statusError
-                      }`}>
-                        {stream.status || 'unknown'}
-                      </span>
-                    </td>
-                    <td>
-                      {stream.autorestart ? (
-                        <span className={`${styles.statusBadge} ${
-                          stream.autorestart.status === 'enabled' ? styles.statusActive : styles.statusInactive
-                        }`}>
-                          {stream.autorestart.status}
-                        </span>
-                      ) : '-'}
-                    </td>
-                    <td>{new Date(stream.created_at).toLocaleDateString()}</td>
-                    <td>
-                      <button 
-                        className={styles.viewButton}
-                        onClick={() => router.push(`/streams/${stream.stream_id}`)}
-                      >
-                        <i className="bi bi-eye me-1"></i> View
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+         <div className={styles.tableCard}>
+           <div className={styles.chartCardHeader}>
+             <span className={styles.chartCardIcon}><i className="bi bi-table"></i></span>
+             All Streams ({streams.length})
+             <div className="ms-auto">
+               <div className={styles.buttonGroup}>
+                 <button 
+                   className={styles.refreshButton}
+                   onClick={handleRefresh}
+                   disabled={loading}
+                 >
+                   <i className="bi bi-arrow-clockwise me-1"></i>
+                   {loading ? 'Loading...' : 'Refresh'}
+                 </button>
+                 <button 
+                   className={styles.importButton}
+                   onClick={handleImportClick}
+                 >
+                   <i className="bi bi-upload me-1"></i> Import
+                 </button>
+                 <Link href="/streams/create" className={styles.createButton}>
+                   <i className="bi bi-plus-circle me-1"></i> Create Stream
+                 </Link>
+               </div>
+             </div>
+           </div>
+           <input
+             type="file"
+             ref={fileInputRef}
+             style={{ display: 'none' }}
+             accept=".csv,.xlsx,.xls"
+             onChange={handleFileUpload}
+           />
+           <div className="table-responsive">
+             <table className="table table-hover mb-0">
+               <thead className={styles.tableHeader}>
+                 <tr>
+                   <th>Stream ID</th>
+                   <th>Name</th>
+                   <th>Status</th>
+                   <th>Type</th>
+                   <th>Location</th>
+                   <th>Actions</th>
+                 </tr>
+               </thead>
+               <tbody>
+                 {streams.length > 0 ? (
+                   streams.map((stream, index) => (
+                     <tr key={stream.id || index} className={styles.tableRow}>
+                       <td><code>{(stream.id || index).toString().substring(0, 8)}...</code></td>
+                       <td>{stream.name || 'Unnamed Stream'}</td>
+                       <td>
+                         <span className={`badge ${
+                           stream.status === 'active' ? 'bg-success' : 
+                           stream.status === 'inactive' ? 'bg-danger' : 
+                           'bg-secondary'
+                         }`}>
+                           {stream.status || 'unknown'}
+                         </span>
+                       </td>
+                       <td>{stream.type || 'N/A'}</td>
+                       <td>
+                         {stream.geo_position?.latitude && stream.geo_position?.longitude ? (
+                           <span>
+                             <i className="bi bi-geo-alt text-primary me-1"></i>
+                             {stream.geo_position.latitude.toFixed(4)}, {stream.geo_position.longitude.toFixed(4)}
+                           </span>
+                         ) : stream.latitude && stream.longitude ? (
+                           <span>
+                             <i className="bi bi-geo-alt text-primary me-1"></i>
+                             {parseFloat(stream.latitude).toFixed(4)}, {parseFloat(stream.longitude).toFixed(4)}
+                           </span>
+                         ) : (
+                           <span className="badge bg-secondary">No Location</span>
+                         )}
+                       </td>
+                       <td>
+                         <button 
+                           className={styles.viewButton}
+                           onClick={() => window.location.href = `/streams/${stream.id}`}
+                         >
+                           <i className="bi bi-eye me-1"></i> View
+                         </button>
+                       </td>
+                     </tr>
+                   ))
+                 ) : (
+                   <tr>
+                     <td colSpan="6" className="text-center text-muted py-4">
+                       {loading ? 'Loading streams...' : 'No streams available'}
+                     </td>
+                   </tr>
+                 )}
+               </tbody>
+             </table>
+           </div>
+         </div>
         </div>
-      </div>
     </div>
   );
 }

@@ -110,6 +110,56 @@ function MarkerClusterGroup({ streams }) {
     // Add the marker cluster group to the map
     map.addLayer(markerClusterGroup);
     
+    // Create viewport polygon
+    const createViewportPolygon = () => {
+      const bounds = map.getBounds();
+      const polygon = L.polygon([
+        [bounds.getNorth(), bounds.getWest()],
+        [bounds.getNorth(), bounds.getEast()],
+        [bounds.getSouth(), bounds.getEast()],
+        [bounds.getSouth(), bounds.getWest()]
+      ], {
+        color: '#22c55e',
+        weight: 2,
+        opacity: 0.8,
+        fillColor: '#ffffff',
+        fillOpacity: 0.1,
+        dashArray: '10, 10'
+      });
+      return polygon;
+    };
+    
+    // Initialize polygon
+    const polygon = createViewportPolygon();
+    polygonRef.current = polygon;
+    polygon.addTo(map);
+    
+    // Update polygon on map movement
+    const updatePolygon = () => {
+      if (polygonRef.current) {
+        const bounds = map.getBounds();
+        const newLatLngs = [
+          [bounds.getNorth(), bounds.getWest()],
+          [bounds.getNorth(), bounds.getEast()],
+          [bounds.getSouth(), bounds.getEast()],
+          [bounds.getSouth(), bounds.getWest()]
+        ];
+        polygonRef.current.setLatLngs(newLatLngs);
+        
+        // Notify parent component about polygon change
+        if (onPolygonChange) {
+          onPolygonChange(bounds);
+        }
+      }
+    };
+    
+    // Add event listeners
+    map.on('moveend', updatePolygon);
+    map.on('zoomend', updatePolygon);
+    
+    // Initial polygon update
+    setTimeout(() => updatePolygon(), 100);
+    
     // Fit bounds to show all markers
     if (streams.length > 0) {
       const bounds = markerClusterGroup.getBounds();
@@ -118,14 +168,18 @@ function MarkerClusterGroup({ streams }) {
     
     return () => {
       map.removeLayer(markerClusterGroup);
+      if (polygonRef.current) {
+        map.removeLayer(polygonRef.current);
+      }
     };
   }, [map, streams]);
   
   return null;
 }
 
-export default function StreamMap({ streams = [] }) {
+export default function StreamMap({ streams = [], onPolygonChange }) {
   const mapRef = useRef(null);
+  const polygonRef = useRef(null);
   
   useEffect(() => {
     fixLeafletIcons();

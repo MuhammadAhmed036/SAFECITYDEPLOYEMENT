@@ -8,6 +8,7 @@ import 'leaflet.markercluster/dist/MarkerCluster.Default.css';
 import 'leaflet/dist/leaflet.css';
 import Popup from './Popup';
 import ClusterPreviewPopup from './ClusterPreviewPopup';
+import DahuaClusterPopup from './DahuaClusterPopup';
 
 /* =========================
    CONFIG
@@ -27,7 +28,23 @@ const CameraIcon = L.icon({
 
 // Stream icon for stream markers
 const StreamIcon = L.icon({
-  iconUrl: '/stream-placeholder.svg',
+  iconUrl: '/camera-icon.svg',
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
+});
+
+// Green camera icon for Luna Live Records
+const LunaCameraIcon = L.icon({
+  iconUrl: '/camera-icon-green.svg',
+  iconSize: [32, 32],
+  iconAnchor: [16, 32],
+  popupAnchor: [0, -32],
+});
+
+// Red camera icon for Dahua cameras
+const DahuaCameraIcon = L.icon({
+  iconUrl: '/camera-icon-red.svg',
   iconSize: [32, 32],
   iconAnchor: [16, 32],
   popupAnchor: [0, -32],
@@ -212,6 +229,60 @@ const normalizeStream = (stream) => {
   };
 };
 
+// Normalize Live Records Dahua data into a consistent format
+const normalizeLiveRecordsDahua = (record) => {
+  const lat = record?.lat;
+  const lng = record?.lon;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const when = record?.created_at || null;
+  const cacheKey = record?.track_id || record?.camera_name || Date.now();
+
+  return {
+    lat,
+    lng,
+    label: record?.camera_name || 'Unknown Camera',
+    trackId: record?.track_id || '—',
+    when: when || '—',
+    city: record?.city || '—',
+    area: record?.area || '—',
+    address: record?.address || '—',
+    streamId: record?.stream_id || '—',
+    image: '/camera-icon.svg', // Regular camera icon for Dahua Live Records
+    imageCandidates: ['/camera-icon.svg'],
+    cameraId: record?.track_id || cacheKey,
+    timestamp: new Date(when || Date.now()).getTime(),
+    type: 'live-records-dahua',
+  };
+};
+
+// Normalize Live Records Luna data into a consistent format
+const normalizeLiveRecordsLuna = (record) => {
+  const lat = record?.location?.geo_position?.latitude;
+  const lng = record?.location?.geo_position?.longitude;
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const when = record?.created_at || null;
+  const cacheKey = record?.stream_id || record?.name || Date.now();
+
+  return {
+    lat,
+    lng,
+    label: record?.name || 'Unknown Person',
+    streamId: record?.stream_id || '—',
+    when: when || '—',
+    city: record?.location?.city || '—',
+    area: record?.location?.area || '—',
+    address: record?.location?.address || '—',
+    locationInfo: record?.location?.info || '—',
+    image: '/camera-icon-green.svg', // Green camera icon for Luna Live Records
+    imageCandidates: ['/camera-icon-green.svg'],
+    personId: record?.name || cacheKey,
+    timestamp: new Date(when || Date.now()).getTime(),
+    type: 'live-records-luna',
+  };
+};
+
 // Filter events to show only the latest per camera location
 const getLatestEventsPerLocation = (events) => {
   const locationMap = new Map();
@@ -282,7 +353,7 @@ function ImageWithFallback({ imageCandidates = [], fallbackIcon, alt }) {
 /* =========================
    MAIN COMPONENT
    ========================= */
-export default function LiveCameraMap({ height = 500, events = [], streams = [], dahua = [], onPolygonChange, activeTab = 'events', onClusterClick }) {
+export default function LiveCameraMap({ height = 500, events = [], streams = [], dahua = [], liveRecordsDahua = [], liveRecordsLuna = [], onPolygonChange, activeTab = 'events', streamsSubTab = 'luna', onClusterClick, realTimeStreamEvents = [] }) {
   const ref = useRef(null);
   const mapRef = useRef(null);
   const clusterRef = useRef(null);
@@ -290,6 +361,7 @@ export default function LiveCameraMap({ height = 500, events = [], streams = [],
   const [popupOpen, setPopupOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [clusterPreviewOpen, setClusterPreviewOpen] = useState(false);
+  const [dahuaClusterPreviewOpen, setDahuaClusterPreviewOpen] = useState(false);
   const [selectedClusterData, setSelectedClusterData] = useState([]);
   const hasInitiallyFitBounds = useRef(false);
 
@@ -315,15 +387,26 @@ export default function LiveCameraMap({ height = 500, events = [], streams = [],
         const p = normalizeStream(stream);
         if (p) out.push(p);
       }
-    } else if (activeTab === 'dahua') {
+      // Add Dahua cameras to streams tab
       for (const camera of Array.isArray(dahua) ? dahua : []) {
         const p = normalizeDahua(camera);
+        if (p) out.push(p);
+      }
+    } else if (activeTab === 'live-records') {
+      // Add Live Records Dahua data
+      for (const record of Array.isArray(liveRecordsDahua) ? liveRecordsDahua : []) {
+        const p = normalizeLiveRecordsDahua(record);
+        if (p) out.push(p);
+      }
+      // Add Live Records Luna data
+      for (const record of Array.isArray(liveRecordsLuna) ? liveRecordsLuna : []) {
+        const p = normalizeLiveRecordsLuna(record);
         if (p) out.push(p);
       }
     }
     
     return getLatestEventsPerLocation(out);
-  }, [events, streams, dahua, activeTab]);
+  }, [events, streams, dahua, liveRecordsDahua, liveRecordsLuna, activeTab]);
 
   // Initialize map
   useEffect(() => {
@@ -374,7 +457,16 @@ export default function LiveCameraMap({ height = 500, events = [], streams = [],
       
       if (clusterData.length > 0) {
         setSelectedClusterData(clusterData);
-        setClusterPreviewOpen(true);
+        
+        // Check if this is a Dahua cluster in the streams tab with dahua sub-tab
+        const isDahuaCluster = activeTab === 'streams' && streamsSubTab === 'dahua' && 
+          clusterData.some(item => item.type === 'dahua');
+        
+        if (isDahuaCluster) {
+          setDahuaClusterPreviewOpen(true);
+        } else {
+          setClusterPreviewOpen(true);
+        }
       }
     });
     clusterRef.current = mcg;
@@ -442,7 +534,14 @@ export default function LiveCameraMap({ height = 500, events = [], streams = [],
     clusterRef.current.clearLayers();
     
     points.forEach((point) => {
-      const icon = point.type === 'stream' ? StreamIcon : CameraIcon;
+      let icon = CameraIcon; // Default icon
+      if (point.type === 'stream') {
+        icon = StreamIcon;
+      } else if (point.type === 'live-records-luna') {
+        icon = LunaCameraIcon;
+      } else if (point.type === 'dahua') {
+        icon = DahuaCameraIcon;
+      }
       const marker = L.marker([point.lat, point.lng], { 
         icon,
         pointData: point // Store point data for cluster access
@@ -477,8 +576,18 @@ export default function LiveCameraMap({ height = 500, events = [], streams = [],
         onClose={() => setClusterPreviewOpen(false)}
         clusterData={selectedClusterData}
         onSeeDetails={handleSeeDetails}
-        activeTab={activeTab}
+        activeTab={activeTab === 'streams' && streamsSubTab === 'dahua' ? 'dahua' : activeTab}
         fallbackIcon={FALLBACK_ICON}
+        realTimeStreamEvents={realTimeStreamEvents}
+      />
+      
+      <DahuaClusterPopup
+        isOpen={dahuaClusterPreviewOpen}
+        onClose={() => setDahuaClusterPreviewOpen(false)}
+        clusterData={selectedClusterData}
+        onSeeDetails={handleSeeDetails}
+        fallbackIcon={FALLBACK_ICON}
+        realTimeStreamEvents={realTimeStreamEvents}
       />
       
       <Popup

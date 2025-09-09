@@ -20,11 +20,26 @@ const generateMockEvents = () => {
     const lat = 24.8607 + Math.random() * (36.8776 - 24.8607);
     const lng = 61.8719 + Math.random() * (77.8374 - 61.8719);
     
+    const sampleId = `mock-sample-${i + 1}-${Math.random().toString(36).substr(2, 9)}`;
+    
     const event = {
       event_id: `mock_event_${i + 1}`,
       source: `${city}_${source}`,
       create_time: new Date(now.getTime() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
       image_origin: `/mock-images/person-${(i % 10) + 1}.svg`,
+      face_detections: [{
+        sample_id: sampleId,
+        detect_time: new Date(now.getTime() - Math.random() * 24 * 60 * 60 * 1000).toISOString(),
+        detect_ts: null,
+        detection: {
+          rect: {
+            x: Math.floor(Math.random() * 800) + 100,
+            y: Math.floor(Math.random() * 600) + 100,
+            width: Math.floor(Math.random() * 200) + 150,
+            height: Math.floor(Math.random() * 250) + 200
+          }
+        }
+      }],
       top_match: {
         label: label,
         similarity: 0.7 + Math.random() * 0.3

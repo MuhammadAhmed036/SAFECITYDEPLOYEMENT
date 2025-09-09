@@ -1,5 +1,5 @@
 {
-  "name": "7august",
+  "name": "safe-city-app",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -8,7 +8,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "setup-postgres": "node setup-postgres.js"
+    "setup-postgres": "node setup-postgres.js",
+    "test-db": "node test-db.js",
+    "deploy": "vercel --prod",
+    "deploy-preview": "vercel"
   },
   "dependencies": {
     "bootstrap": "^5.3.7",

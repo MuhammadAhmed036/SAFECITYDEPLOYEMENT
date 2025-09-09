@@ -94,7 +94,7 @@ export default function MapComponent() {
   };
 
   const handleDelete = (index) => {
-    const confirmDelete = window.confirm('Do you want to delete this marked location?');
+    const confirmDelete = typeof window !== 'undefined' && window.confirm('Do you want to delete this marked location?');
     if (confirmDelete) {
       markersRef.current[index]?.remove(); // Remove marker from map
       markersRef.current.splice(index, 1); // Remove from marker ref
