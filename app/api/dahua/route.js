@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { pool } from '../../../lib/db.js';
+import fs from 'fs';
+import path from 'path';
 
 // Function to get Dahua endpoint from database
 async function getDahuaEndpoint() {
@@ -21,11 +23,49 @@ async function getDahuaEndpoint() {
   }
 }
 
+// Function to load mock Dahua data
+function loadMockCameras() {
+  try {
+    const mockDataPath = path.join(process.cwd(), 'dahua api data mock.txt');
+    const mockData = fs.readFileSync(mockDataPath, 'utf8');
+    const parsedData = JSON.parse(mockData);
+    return parsedData.items || [];
+  } catch (error) {
+    console.error('Error loading mock Dahua data:', error);
+    return [];
+  }
+}
+
 // Proxy API route for Dahua cameras
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
-  const page = searchParams.get('page') || '1';
-  const pageSize = searchParams.get('page_size') || '1000';
+  const page = parseInt(searchParams.get('page') || '1');
+  const pageSize = parseInt(searchParams.get('page_size') || '1000');
+  const useMock = searchParams.get('mock') === 'true';
+  
+  // If mock parameter is true, return mock data
+  if (useMock) {
+    const mockCameras = loadMockCameras();
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedCameras = mockCameras.slice(startIndex, endIndex);
+    
+    console.log(`[Dahua API] Returning ${paginatedCameras.length} mock cameras (page ${page}, size ${pageSize})`);
+    
+    return NextResponse.json({
+      total: mockCameras.length,
+      count: paginatedCameras.length,
+      offset: startIndex,
+      limit: pageSize,
+      items: paginatedCameras
+    }, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
+  }
   
   // Get Dahua endpoint from database
   const DAHUA_API = await getDahuaEndpoint();
@@ -66,10 +106,28 @@ export async function GET(request) {
     
   } catch (error) {
     console.log('[Dahua API] Error:', error.message);
-    return NextResponse.json(
-      { error: 'Failed to connect to Dahua API server', details: error.message },
-      { status: 503 }
-    );
+    
+    // Fallback to mock data on error
+    console.log('[Dahua API] Falling back to mock data due to error');
+    const mockCameras = loadMockCameras();
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const paginatedCameras = mockCameras.slice(startIndex, endIndex);
+    
+    return NextResponse.json({
+      total: mockCameras.length,
+      count: paginatedCameras.length,
+      offset: startIndex,
+      limit: pageSize,
+      items: paginatedCameras,
+      fallback: true
+    }, {
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      },
+    });
   }
 }
 
